@@ -4,10 +4,7 @@
 Google Maps onto a single personal map — every restaurant aligned to one
 `google_place_id`.**
 
-TasteMap doesn't replace Google Maps; it adds the *推薦脈絡* Google Maps throws away —
-**who** recommended a place, from **which** post/video, the **dishes**, the takeaway,
-the source link — and pins it where you'll actually use it. Then it lets you follow
-other people and see the spots *they've* saved.
+It lets you follow other people and see the spots *they've* saved.
 
 ![TasteMap Overall Architecture](<docs/architecture/TasteMap_Overall_Architecture.drawio.svg>)
 ![TasteMap Backend API Detail Diagram](<docs/architecture/TasteMap_Backend_API_Detail_Diagram.drawio.svg>)
