@@ -1,0 +1,2 @@
+![TasteMap Overall Architecture](<docs/architecture/TasteMap_Overall_Architecture.drawio.svg>)
+![TasteMap Backend API Detail Diagram](<docs/architecture/TasteMap_Backend_API_Detail_Diagram.drawio.svg>)
