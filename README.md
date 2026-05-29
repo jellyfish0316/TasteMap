@@ -9,8 +9,6 @@ It lets you follow other people and see the spots *they've* saved.
 ![TasteMap Overall Architecture](<docs/architecture/TasteMap_Overall_Architecture.drawio.svg>)
 ![TasteMap Backend API Detail Diagram](<docs/architecture/TasteMap_Backend_API_Detail_Diagram.drawio.svg>)
 
----
-
 ## The core idea
 
 Every restaurant resolves to a stable **`google_place_id`**. Google provides the base
@@ -23,8 +21,6 @@ top of it:
 
 Because a place is **global and deduplicated** by `google_place_id`, the same restaurant
 shared by ten different creators is one pin with ten voices — never ten duplicates.
-
----
 
 ## Key features
 
@@ -59,7 +55,6 @@ shared by ten different creators is one pin with ten voices — never ten duplic
 ### 🔭 Coming next (Level 3)
 - Personalized recommendations of **who to follow**, computed over the follow graph.
 
----
 
 ## Tech stack
 
@@ -72,7 +67,6 @@ shared by ten different creators is one pin with ten voices — never ten duplic
 | **Frontend** | React 18 · TypeScript · Vite · Tailwind · Zustand · React Router · `@vis.gl/react-google-maps` |
 | **Infra** | Docker Compose (Postgres/PostGIS + Redis) · GitHub Actions CI |
 
----
 
 ## Project structure
 
@@ -113,7 +107,6 @@ TasteMap/
 └── docs/                         # parsers guide, system design, product concept, per-API docs
 ```
 
----
 
 ## Getting started
 
@@ -147,7 +140,6 @@ app with neither, set `FAKE_IMPORTS=true`.
 > register an account, and paste *any* URL — canned demo restaurants flow all the way to
 > the map.
 
----
 
 ## The import pipeline
 
@@ -163,7 +155,6 @@ Each platform owner implements **one** parser against the same contract; everyth
 downstream (matching → dedup → cards → map → social) is shared. Full contributor guide:
 **[docs/parsers.md](docs/parsers.md)**.
 
----
 
 ## Documentation
 
@@ -175,7 +166,6 @@ downstream (matching → dedup → cards → map → social) is shared. Full con
 | [docs/api/](docs/api/) | Per-surface API docs: auth, import, place, collection, recommendation, social |
 | `http://localhost:8000/docs` | Live interactive OpenAPI docs |
 
----
 
 ## Team
 
