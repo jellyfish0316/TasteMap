@@ -11,6 +11,7 @@ from datetime import datetime
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.integrations.base import ParseResult
+from app.integrations.google_places_client import PlaceCandidate
 from app.models.import_candidate import MatchStatus
 from app.models.import_job import ImportStatus
 
@@ -73,6 +74,16 @@ class ImportCandidateResponse(BaseModel):
     matched_place_id: uuid.UUID | None = None
     match_options: list[dict] | None = None
     selected: bool
+
+
+class CandidateResolveRequest(BaseModel):
+    """Manually resolve an unmatched / ambiguous candidate to a chosen Google place.
+
+    The picked `place` (from GET /places/search) becomes the candidate's match, so it
+    flips to `matched` and is then savable through the normal confirm flow.
+    """
+
+    place: PlaceCandidate
 
 
 class ImportConfirmRequest(BaseModel):

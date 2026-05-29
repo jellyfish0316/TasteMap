@@ -19,6 +19,7 @@ from sqlalchemy.orm import Session
 from app.api.deps import get_current_user_id, get_db
 from app.schemas.collection import CollectionResponse
 from app.schemas.import_job import (
+    CandidateResolveRequest,
     ImportCandidateResponse,
     ImportConfirmRequest,
     ImportJobResponse,
@@ -67,6 +68,19 @@ def list_candidates(job_id: uuid.UUID, db: Session = Depends(get_db)) -> list[Im
 
     candidates = import_repository.list_candidates(db, job_id)
     return [ImportCandidateResponse.model_validate(c) for c in candidates]
+
+
+@router.post("/{job_id}/candidates/{candidate_id}/resolve", response_model=ImportCandidateResponse)
+def resolve_candidate(
+    job_id: uuid.UUID,
+    candidate_id: uuid.UUID,
+    payload: CandidateResolveRequest,
+    db: Session = Depends(get_db),
+    _: uuid.UUID = Depends(get_current_user_id),
+) -> ImportCandidateResponse:
+    """Manually pin an unmatched/ambiguous candidate to a chosen Google place."""
+    cand = import_service.resolve_candidate(db, job_id, candidate_id, candidate=payload.place)
+    return ImportCandidateResponse.model_validate(cand)
 
 
 @router.post("/{job_id}/confirm", response_model=CollectionResponse)

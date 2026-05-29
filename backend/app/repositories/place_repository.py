@@ -8,6 +8,8 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.integrations.google_places_client import PlaceCandidate
+from app.models.collection import Collection
+from app.models.follow import Follow
 from app.models.place import Place
 from app.models.recommendation import Recommendation
 
@@ -23,6 +25,23 @@ def list_saved_by_user(db: Session, user_id: uuid.UUID) -> list[Place]:
             select(Place)
             .join(Recommendation, Recommendation.place_id == Place.id)
             .where(Recommendation.user_id == user_id)
+            .distinct()
+        )
+    )
+
+
+def list_from_followees(db: Session, user_id: uuid.UUID) -> list[Place]:
+    """Distinct places saved in the PUBLIC lists of everyone `user_id` follows.
+
+    These are the extra pins the user sees on their map from their Taste Circle.
+    """
+    return list(
+        db.scalars(
+            select(Place)
+            .join(Recommendation, Recommendation.place_id == Place.id)
+            .join(Collection, Collection.id == Recommendation.collection_id)
+            .join(Follow, Follow.followee_id == Collection.user_id)
+            .where(Follow.follower_id == user_id, Collection.is_public.is_(True))
             .distinct()
         )
     )

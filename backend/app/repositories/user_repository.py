@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import uuid
 
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
 from app.models.user import User
@@ -36,3 +36,16 @@ def get_by_email(db: Session, email: str) -> User | None:
 
 def get_by_username(db: Session, username: str) -> User | None:
     return db.scalar(select(User).where(User.username == username))
+
+
+def search(db: Session, q: str, *, limit: int = 20) -> list[User]:
+    """Find users by handle or display name (case-insensitive) — L2 discovery."""
+    pattern = f"%{q}%"
+    return list(
+        db.scalars(
+            select(User)
+            .where(or_(User.username.ilike(pattern), User.display_name.ilike(pattern)))
+            .order_by(User.username)
+            .limit(limit)
+        )
+    )

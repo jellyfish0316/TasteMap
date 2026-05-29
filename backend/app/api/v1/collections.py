@@ -15,6 +15,7 @@ from app.api.deps import get_current_user_id, get_db
 from app.schemas.collection import (
     CollectionCreateRequest,
     CollectionDetailResponse,
+    CollectionItemCreateRequest,
     CollectionResponse,
     CollectionUpdateRequest,
 )
@@ -78,6 +79,23 @@ def delete_collection(
     user_id: uuid.UUID = Depends(get_current_user_id),
 ) -> None:
     collection_service.delete(db, collection_id, user_id)
+
+
+@router.post("/{collection_id}/items", response_model=RecommendationResponse,
+             status_code=status.HTTP_201_CREATED)
+def add_item(
+    collection_id: uuid.UUID,
+    payload: CollectionItemCreateRequest,
+    db: Session = Depends(get_db),
+    user_id: uuid.UUID = Depends(get_current_user_id),
+) -> RecommendationResponse:
+    """Manually save a chosen Google place (from /places/search) into this list."""
+    rec = collection_service.add_place(
+        db, collection_id, user_id,
+        candidate=payload.place, note=payload.note,
+        dishes=payload.dishes, summary=payload.summary,
+    )
+    return RecommendationResponse.model_validate(rec)
 
 
 @router.patch("/{collection_id}/items/{rec_id}", response_model=RecommendationResponse)

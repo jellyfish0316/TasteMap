@@ -17,7 +17,7 @@ from sqlalchemy.orm import Session
 from app.api.deps import get_current_user_id, get_db
 from app.integrations.google_places_client import PlaceCandidate
 from app.schemas.place import PlaceDetailResponse, PlaceSummary
-from app.schemas.recommendation import RecommendationResponse
+from app.schemas.recommendation import RecOwner, RecommendationResponse
 from app.services import place_service
 
 router = APIRouter(prefix="/places", tags=["places"])
@@ -41,6 +41,15 @@ def my_map(
     return [PlaceSummary.model_validate(p) for p in place_service.list_map(db, user_id)]
 
 
+@router.get("/following", response_model=list[PlaceSummary])
+def following_map(
+    db: Session = Depends(get_db),
+    user_id: uuid.UUID = Depends(get_current_user_id),
+) -> list[PlaceSummary]:
+    """Pins from the public lists of people the user follows."""
+    return [PlaceSummary.model_validate(p) for p in place_service.list_followee_map(db, user_id)]
+
+
 @router.get("/{place_id}", response_model=PlaceDetailResponse)
 def get_place(
     place_id: uuid.UUID,
@@ -57,4 +66,10 @@ def place_recommendations(
     user_id: uuid.UUID = Depends(get_current_user_id),
 ) -> list[RecommendationResponse]:
     recs = place_service.list_recommendations_for_place(db, place_id, user_id)
-    return [RecommendationResponse.model_validate(r) for r in recs]
+    out: list[RecommendationResponse] = []
+    for r in recs:
+        resp = RecommendationResponse.model_validate(r)
+        if r.user_id != user_id:  # a followee's card — attribute it
+            resp.owner = RecOwner.model_validate(r.user)
+        out.append(resp)
+    return out

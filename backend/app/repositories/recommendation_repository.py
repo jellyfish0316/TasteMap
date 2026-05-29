@@ -4,8 +4,10 @@ from __future__ import annotations
 import uuid
 
 from sqlalchemy import select
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 
+from app.models.collection import Collection
+from app.models.follow import Follow
 from app.models.recommendation import Recommendation
 
 
@@ -78,6 +80,28 @@ def list_for_user_and_place(db: Session, user_id: uuid.UUID, place_id: uuid.UUID
         db.scalars(
             select(Recommendation)
             .where(Recommendation.user_id == user_id, Recommendation.place_id == place_id)
+            .order_by(Recommendation.created_at.desc())
+        )
+    )
+
+
+def list_from_followees_for_place(db: Session, user_id: uuid.UUID,
+                                  place_id: uuid.UUID) -> list[Recommendation]:
+    """Cards for one place from the PUBLIC lists of people `user_id` follows.
+
+    The owner (`.user`) is eager-loaded so the pin sheet can attribute each note.
+    """
+    return list(
+        db.scalars(
+            select(Recommendation)
+            .join(Collection, Collection.id == Recommendation.collection_id)
+            .join(Follow, Follow.followee_id == Collection.user_id)
+            .where(
+                Follow.follower_id == user_id,
+                Collection.is_public.is_(True),
+                Recommendation.place_id == place_id,
+            )
+            .options(joinedload(Recommendation.user))
             .order_by(Recommendation.created_at.desc())
         )
     )

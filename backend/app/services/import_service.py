@@ -14,21 +14,26 @@ Entry points:
 """
 from __future__ import annotations
 
+import logging
 import uuid
 
 from sqlalchemy.orm import Session
 
 from app.core.errors import NotFoundError, ParseError, ValidationError
 from app.integrations.base import ExtractedPlace, ParseResult
+from app.integrations.google_places_client import PlaceCandidate
 from app.models.collection import Collection
 from app.models.import_candidate import ImportCandidate, MatchStatus
 from app.models.import_job import ImportJob
 from app.repositories import (
     collection_repository,
     import_repository,
+    place_repository,
     recommendation_repository,
 )
 from app.services import extraction_service, parser_service, place_matching_service
+
+logger = logging.getLogger(__name__)
 
 
 # --- detection / preview (no DB) ------------------------------------------- #
@@ -108,8 +113,9 @@ def _persist_candidate(db: Session, job: ImportJob, platform: str, author: str |
         match_status = outcome.status
         matched_place_id = outcome.place.id if outcome.place else None
         match_options = outcome.options
-    except Exception:  # noqa: BLE001 — matching must never crash the import
+    except Exception as exc:  # noqa: BLE001 — matching must never crash the import
         # Keep the card; leave it pending so it can be re-matched / picked manually.
+        logger.warning("place matching failed for %r: %s", place.name, exc, exc_info=True)
         match_status, matched_place_id, match_options = MatchStatus.pending, None, None
 
     return import_repository.add_candidate(
@@ -133,6 +139,27 @@ def _persist_candidate(db: Session, job: ImportJob, platform: str, author: str |
         matched_place_id=matched_place_id,
         match_options=match_options,
     )
+
+
+# --- manual resolve (unmatched / ambiguous -> matched) ---------------------- #
+def resolve_candidate(db: Session, job_id: uuid.UUID, candidate_id: uuid.UUID, *,
+                      candidate: PlaceCandidate) -> ImportCandidate:
+    """Pin an unmatched/ambiguous candidate to a place the user picked by hand.
+
+    Get-or-create the shared Place for the chosen google_place_id, then flip the
+    candidate to `matched` (and selected) so the normal confirm flow saves it.
+    """
+    cand = import_repository.get_candidate(db, candidate_id)
+    if cand is None or cand.import_job_id != job_id:
+        raise NotFoundError(f"Import candidate {candidate_id} not found")
+
+    place = place_repository.upsert_from_candidate(db, candidate)
+    import_repository.set_match(
+        db, cand, status=MatchStatus.matched, matched_place_id=place.id, match_options=None
+    )
+    cand.selected = True
+    db.commit()
+    return cand
 
 
 # --- confirm (candidates -> saved recommendations) -------------------------- #

@@ -7,6 +7,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.models.collection import Collection
+from app.models.follow import Follow
 
 
 def create(db: Session, *, user_id: uuid.UUID, name: str, is_public: bool = False,
@@ -63,6 +64,18 @@ def list_public_for_user(db: Session, user_id: uuid.UUID) -> list[Collection]:
         db.scalars(
             select(Collection)
             .where(Collection.user_id == user_id, Collection.is_public.is_(True))
+            .order_by(Collection.created_at.desc())
+        )
+    )
+
+
+def list_public_from_followees(db: Session, user_id: uuid.UUID) -> list[Collection]:
+    """Public lists from everyone `user_id` follows — the L2 explore feed."""
+    return list(
+        db.scalars(
+            select(Collection)
+            .join(Follow, Follow.followee_id == Collection.user_id)
+            .where(Follow.follower_id == user_id, Collection.is_public.is_(True))
             .order_by(Collection.created_at.desc())
         )
     )

@@ -13,9 +13,10 @@ import uuid
 from sqlalchemy.orm import Session
 
 from app.core.errors import NotFoundError
+from app.integrations.google_places_client import PlaceCandidate
 from app.models.collection import Collection
 from app.models.recommendation import Recommendation
-from app.repositories import collection_repository, recommendation_repository
+from app.repositories import collection_repository, place_repository, recommendation_repository
 
 
 def create(db: Session, *, user_id: uuid.UUID, name: str,
@@ -25,6 +26,25 @@ def create(db: Session, *, user_id: uuid.UUID, name: str,
     )
     db.commit()
     return collection
+
+
+def add_place(db: Session, collection_id: uuid.UUID, user_id: uuid.UUID, *,
+              candidate: PlaceCandidate, note: str | None = None,
+              dishes: list[str] | None = None, summary: str | None = None) -> Recommendation:
+    """Manually save a chosen Google place into the user's collection.
+
+    Get-or-create the shared Place (same dedup point imports use), then upsert a
+    self-authored card. No platform/author — this is the user's own pin, not a
+    creator's recommendation.
+    """
+    collection = _owned(db, collection_id, user_id)
+    place = place_repository.upsert_from_candidate(db, candidate)
+    rec = recommendation_repository.upsert(
+        db, user_id=user_id, collection_id=collection.id, place_id=place.id,
+        note=note, dishes=dishes or None, summary=summary,
+    )
+    db.commit()
+    return rec
 
 
 def list_for_user(db: Session, user_id: uuid.UUID) -> list[Collection]:

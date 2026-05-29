@@ -30,10 +30,20 @@ def list_map(db: Session, user_id: uuid.UUID) -> list[Place]:
     return place_repository.list_saved_by_user(db, user_id)
 
 
+def list_followee_map(db: Session, user_id: uuid.UUID) -> list[Place]:
+    """Extra pins from the public lists of everyone the user follows (Taste Circle)."""
+    return place_repository.list_from_followees(db, user_id)
+
+
 def list_recommendations_for_place(db: Session, place_id: uuid.UUID,
                                    user_id: uuid.UUID) -> list[Recommendation]:
-    """The user's own cards for one place (across all their lists)."""
-    return recommendation_repository.list_for_user_and_place(db, user_id, place_id)
+    """Cards for one place: the viewer's own, then any from people they follow.
+
+    Followee cards carry an eager-loaded `.user` so the API can attribute them.
+    """
+    mine = recommendation_repository.list_for_user_and_place(db, user_id, place_id)
+    followees = recommendation_repository.list_from_followees_for_place(db, user_id, place_id)
+    return mine + followees
 
 
 def search(query: str, *, region_hint: str | None = None, limit: int = 5) -> list[PlaceCandidate]:

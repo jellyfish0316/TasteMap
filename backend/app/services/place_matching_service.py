@@ -16,8 +16,11 @@ from __future__ import annotations
 from dataclasses import dataclass
 from difflib import SequenceMatcher
 
+import hashlib
+
 from sqlalchemy.orm import Session
 
+from app.core.config import settings
 from app.integrations.base import ExtractedPlace
 from app.integrations.google_places_client import PlaceCandidate, text_search
 from app.models.import_candidate import MatchStatus
@@ -77,6 +80,12 @@ def match(db: Session, extracted: ExtractedPlace) -> MatchOutcome:
     Only a `matched` result creates/updates a shared Place row; `needs_review`
     keeps the ranked options so the user can pick, `unmatched` keeps nothing.
     """
+    # Only synthesize a match when we genuinely can't call Google (no key). If a
+    # Places key IS set, run REAL matching even in fake-import mode — the fake parser
+    # emits real restaurant names, so this resolves them to real google_place_ids.
+    if settings.fake_imports and not settings.google_places_api_key:
+        return _fake_match(db, extracted)
+
     candidates = text_search(extracted.name, region_hint=extracted.region_hint, limit=MAX_OPTIONS)
     status, best, options = decide(extracted.name, candidates)
     options_json = [c.model_dump() for c in options] or None
@@ -85,3 +94,23 @@ def match(db: Session, extracted: ExtractedPlace) -> MatchOutcome:
         place = place_repository.upsert_from_candidate(db, best)
         return MatchOutcome(status=status, place=place, options=options_json)
     return MatchOutcome(status=status, place=None, options=options_json)
+
+
+def _fake_match(db: Session, extracted: ExtractedPlace) -> MatchOutcome:
+    """Synthesize a confident match with deterministic fake coords (dev/test only)."""
+    h = int(hashlib.md5(extracted.name.encode("utf-8")).hexdigest(), 16)
+    # Anchor near Tainan or Taipei depending on the hint, with name-derived jitter.
+    base_lat, base_lng = (22.99, 120.21) if (extracted.region_hint or "").find("台南") >= 0 else (25.033, 121.565)
+    lat = round(base_lat + ((h % 1000) / 1000 - 0.5) * 0.06, 6)
+    lng = round(base_lng + ((h // 1000 % 1000) / 1000 - 0.5) * 0.06, 6)
+    candidate = PlaceCandidate(
+        google_place_id=f"fake_{h % 10**12}",
+        name=extracted.name,
+        address=extracted.region_hint,
+        lat=lat,
+        lng=lng,
+        rating=4.5,
+        user_rating_count=100,
+    )
+    place = place_repository.upsert_from_candidate(db, candidate)
+    return MatchOutcome(status=MatchStatus.matched, place=place, options=None)

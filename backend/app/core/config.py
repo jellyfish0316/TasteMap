@@ -31,6 +31,9 @@ class Settings(BaseSettings):
     celery_result_backend: str = "redis://localhost:6379/2"
     #: Run import tasks inline (no broker/worker needed). Handy for local dev/tests.
     celery_task_always_eager: bool = False
+    #: DEV/TEST ONLY. Route every import to a built-in fake parser with canned data
+    #: and synthesize place matches — no scraping, no API keys. Never enable in prod.
+    fake_imports: bool = False
 
     # Shared external services
     anthropic_api_key: str | None = None

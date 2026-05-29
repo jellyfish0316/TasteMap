@@ -14,6 +14,16 @@ from pydantic import BaseModel, ConfigDict, Field
 from app.schemas.place import PlaceSummary
 
 
+class RecOwner(BaseModel):
+    """Who saved a card — set only when it isn't the viewer's own (e.g. a followee)."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    username: str
+    display_name: str | None = None
+
+
 class RecommendationResponse(BaseModel):
     """One saved card: the shared Place + the source context + the user's overlay."""
 
@@ -22,6 +32,8 @@ class RecommendationResponse(BaseModel):
     id: uuid.UUID
     collection_id: uuid.UUID
     place: PlaceSummary
+    #: The saver, populated only for cards that aren't the viewer's own.
+    owner: RecOwner | None = None
     # source context (the original creator's voice)
     platform: str | None = None
     author: str | None = None
