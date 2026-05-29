@@ -56,15 +56,21 @@ function RecommendationCard({ rec }: { rec: Recommendation }) {
         <p className="mt-1 text-neutral-500">{rec.context_tags.map((t) => `#${t}`).join(" ")}</p>
       )}
       {rec.summary && <p className="mt-1 italic text-neutral-700">“{rec.summary}”</p>}
-      {(rec.author || rec.platform) && (
-        <p className="mt-2 text-xs text-neutral-500">
-          📍 {rec.author ? `@${rec.author}` : "source"}
-          {rec.platform ? ` · ${rec.platform}` : ""}
-          {rec.source_url && (
-            <a href={rec.source_url} target="_blank" rel="noreferrer" className="ml-1 text-orange-600">
-              ↗
-            </a>
-          )}
+      <p className="mt-2 text-xs text-neutral-500">
+        {rec.author
+          ? `📍 @${rec.author}${rec.platform ? ` · ${rec.platform}` : ""}`
+          : rec.owner
+            ? `📍 saved by ${rec.owner.display_name || `@${rec.owner.username}`}`
+            : "📍 added by you"}
+        {rec.source_url && (
+          <a href={rec.source_url} target="_blank" rel="noreferrer" className="ml-1 text-orange-600">
+            ↗
+          </a>
+        )}
+      </p>
+      {rec.author && rec.owner && (
+        <p className="mt-0.5 text-xs text-neutral-400">
+          saved by {rec.owner.display_name || `@${rec.owner.username}`}
         </p>
       )}
       <p className="mt-1 text-xs text-neutral-600">

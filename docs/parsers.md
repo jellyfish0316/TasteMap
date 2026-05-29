@@ -1,131 +1,190 @@
 # Platform Parsers — Contributor Guide
 
-This is the guide for the 5 platform owners. Each person owns **one** importer:
+Everything a platform owner needs: **set up → where you write → how to test**.
 
-| Platform | Owner | File | LLM extraction? |
-|----------|-------|------|-----------------|
-| Google Maps | _name_ | `backend/app/integrations/google_maps_parser.py` | No (places are explicit) |
-| YouTube | _name_ | `backend/app/integrations/youtube_parser.py` | Yes (shared) |
-| Instagram | _name_ | `backend/app/integrations/instagram_parser.py` | Yes (shared) |
-| Threads | _name_ | `backend/app/integrations/threads_parser.py` | Yes (shared) |
-| X / Twitter | _name_ | `backend/app/integrations/x_parser.py` | Yes (shared) |
+TasteMap turns a social-media link into restaurant cards pinned on a map. Five of us
+each own **one** importer; they all implement the **same contract** and emit the
+**same output**, so the rest of the app (place matching → collections → map → social)
+works identically no matter where the data came from.
 
-You all implement the **same contract** and emit the **same output format**, so the
-rest of TasteMap (place matching → collections → map) works identically no matter
-where the data came from.
+| Platform | Owner | File you edit | Your `.env` key | LLM extraction? |
+|----------|-------|---------------|------------------|-----------------|
+| Google Maps | _name_ | [`google_maps_parser.py`](../backend/app/integrations/google_maps_parser.py) | `GOOGLE_MAPS_API_KEY` | No (places are explicit) |
+| YouTube | _name_ | [`youtube_parser.py`](../backend/app/integrations/youtube_parser.py) | `YOUTUBE_API_KEY` | Yes (shared) |
+| Instagram | _name_ | [`instagram_parser.py`](../backend/app/integrations/instagram_parser.py) | `INSTAGRAM_TOKEN` | Yes (shared) |
+| Threads | _name_ | [`threads_parser.py`](../backend/app/integrations/threads_parser.py) | `THREADS_TOKEN` | Yes (shared) |
+| X / Twitter | _name_ | [`x_parser.py`](../backend/app/integrations/x_parser.py) | `X_BEARER_TOKEN` | Yes (shared) |
+
+> The 6th teammate owns the shared backend/pipeline/frontend — the contract files
+> (`base.py`, `llm_client.py`, `google_places_client.py`), matching, and the app. If you
+> think you need to change one of those, talk to them first.
 
 ---
 
-## The one rule
+## 1. Set up your machine (one-time)
 
-> Take a URL → produce a **list of `SourceContent`** (one per extraction unit).
-> Return it from `fetch()`. The shared pipeline does the rest
-> (LLM extraction per unit → google_place_id matching → dedup).
+**macOS, Linux, and Windows all work** — the backend is pure Python. Only the Docker
+engine install and the virtualenv-activate command differ by OS. You need **Python
+3.11+** and **Docker** (for Postgres + Redis).
+
+### 1a. Install the Docker engine
+
+| OS | How |
+|----|-----|
+| **Linux** | Docker Engine + Compose plugin via your package manager, e.g. `sudo apt install docker.io docker-compose-plugin`. Add yourself to the `docker` group (`sudo usermod -aG docker $USER`, then re-login). |
+| **Windows** | [Docker Desktop](https://www.docker.com/products/docker-desktop/) **with the WSL2 backend** — then do all the steps below *inside* your WSL2 Ubuntu shell (recommended), so paths/line-endings behave. |
+| **macOS** | Docker Desktop, or [Colima](https://github.com/abiosoft/colima): `brew install colima docker docker-compose && colima start`. |
+
+### 1b. Start the infra (same on every OS)
+
+```bash
+cd TasteMap
+docker compose -f infra/docker-compose.yml up -d     # Postgres+PostGIS + Redis
+```
+
+> ⚠️ **`docker compose` vs `docker-compose`.** Modern Docker (Desktop, Linux engine) uses
+> the v2 spelling `docker compose` shown above. If that errors with
+> `unknown shorthand flag: 'f'`, you have v1 — use the **hyphenated** `docker-compose`
+> instead (this is the common case on Colima). They're otherwise equivalent.
+
+### 1c. Backend + config
+
+```bash
+cd backend
+python3 -m venv .venv          # Windows: py -3 -m venv .venv
+
+# Activate the venv:
+source .venv/bin/activate       # macOS / Linux / WSL / Git-Bash
+# .venv\Scripts\Activate.ps1    # Windows PowerShell
+# .venv\Scripts\activate.bat    # Windows cmd.exe
+
+pip install -e '.[dev]'
+
+cp .env.example .env            # Windows cmd: copy .env.example .env  — then edit it
+
+alembic upgrade head            # create the DB schema (re-run after model changes)
+uvicorn app.main:app --reload   # http://localhost:8000/docs
+```
+
+> ⚠️ **zsh/bash eats `#`.** Don't paste trailing `# comments` onto shell commands —
+> the shell can treat `#` literally, so `cp .env.example .env # foo` fails with a
+> confusing error and your `.env` never gets created. Run the bare command (in zsh you
+> can also `setopt interactive_comments` first).
+
+### What to put in `.env`
+
+The defaults already point at the docker-compose Postgres/Redis. You only need to add
+the keys for **your** work:
+
+| Key | Who needs it | Notes |
+|-----|--------------|-------|
+| `ANTHROPIC_API_KEY` | YouTube / IG / Threads / X | Powers the shared LLM extractor. Not needed for Google Maps or FAKE_IMPORTS. |
+| `GOOGLE_PLACES_API_KEY` | everyone (for real matching) | Aligns extracted names to a `google_place_id`. **Must enable “Places API (New)”** — see Troubleshooting. |
+| your platform key (table above) | you | Whatever your scraper/API client needs. |
+| `FAKE_IMPORTS` | — | `true` to test the whole flow with no scraping/keys (see §3a). Turn **off** to run your real parser. |
+| `CELERY_TASK_ALWAYS_EAGER` | — | `true` (default) runs imports inline, so you don't need a separate Celery worker in dev. |
+
+---
+
+## 2. Where you write — the one rule
+
+> Take a URL → produce a **list of `SourceContent`** (one per extraction unit) and
+> return it from `fetch()`. The shared pipeline does the rest (LLM extraction per unit
+> → `google_place_id` matching → dedup → cards).
 
 You normally implement **exactly one method**: `fetch(self, url) -> list[SourceContent]`.
+The contract and data formats are in [`base.py`](../backend/app/integrations/base.py) —
+**read it first.** Your file is a stub today with `fetch()` raising
+`ParseError("…not implemented yet")` and an example in comments.
 
-The contract and both data formats live in
-[`backend/app/integrations/base.py`](../backend/app/integrations/base.py). Read it first.
+In **your parser file** you own four things:
 
-### One SourceContent == one LLM extraction unit
+```python
+class YouTubeParser(SourceParser):
+    platform = "youtube"                      # 1. stable id
+    url_patterns = [r"youtu\.be/", r"youtube\.com/watch\?v="]   # 2. detection regexes
 
-This is the key concept. Decide your granularity per `source_type`:
+    extraction_guidance = "Input is a transcript… set timestamp_seconds…"  # 3. your prompt tuning
+
+    @classmethod
+    def detect_source_type(cls, url): ...      # 4. post|video|profile|thread…
+
+    def fetch(self, url) -> list[SourceContent]:   # ← THE WORK: scrape/API → SourceContent[]
+        ...
+```
+
+### `SourceContent`: one == one LLM extraction unit
+
+This is the key decision. Pick your granularity per `source_type`:
 
 | Source | What `fetch()` returns |
 |--------|------------------------|
 | single post / single video | `[1 SourceContent]` |
-| **profile / channel** | **one SourceContent per post/video** — each extracted independently |
-| thread / chaptered video | `[1 SourceContent with N segments]` (keep context together = one cheaper call) |
+| **profile / channel** | **one SourceContent per post/video** (each extracted independently) |
+| thread / chaptered video | `[1 SourceContent with N segments]` (shared context = one cheaper call) |
 
-So a 120-post profile becomes 120 units, each its own LLM call — one bad post can't
-sink the whole import, and you never blow the context window. **Merging duplicate
-restaurants is NOT your job** — that happens downstream, keyed on `google_place_id`.
+A 120-post profile → 120 units → 120 isolated LLM calls; one bad post can't sink the
+import, and you never blow the context window. **Merging duplicate restaurants is NOT
+your job** — that happens downstream, keyed on `google_place_id`.
 
----
-
-## The pipeline
-
-```
-URL ──get_parser_for_url()──► YourParser
-        │
-        ├─ fetch(url)      ← YOU implement (platform scraping/API)
-        │     └─► list[SourceContent]   (one per post/video; raw text/segments/images)
-        │
-        ├─ extract(unit)   ← SHARED (LLM), run once PER unit. Override only for Google Maps.
-        │     └─► list[ExtractedPlace]
-        │
-        └─ parse(url)      ← SHARED. Fans out over units (per-unit failure isolation),
-                  └─► ParseResult  → place matching → google_place_id → dedup → collection
-```
-
-## What you produce: `SourceContent`
-
-Fill in whatever the platform gives you; leave the rest as defaults.
+Fill in what the platform gives you; leave the rest as defaults:
 
 | Field | Use it for |
 |-------|-----------|
-| `platform`, `source_url`, `source_type` | identity (already known from the URL) |
+| `platform`, `source_url`, `source_type` | identity (known from the URL) |
 | `author`, `title` | creator handle, video/page title |
 | `text` | the main blob: caption + transcript + post body |
-| `segments[]` | **multi-place** sources — one chunk per place. Carry `timestamp_seconds` (YouTube) and a deep-link `source_url` (thread post, video moment) |
+| `segments[]` | multi-place sources — one chunk per place; carry `timestamp_seconds` (YouTube) + a deep-link `source_url` |
 | `image_urls[]` | images the LLM step should OCR (reel frames, post images) |
-| `suggested_collection_name` | a good default list name (handle / video title / thread topic) |
+| `suggested_collection_name` | default list name (handle / video title / thread topic) |
 
-The shared LLM step reads `text` + `segments` + `image_urls` and returns clean
-`ExtractedPlace` items — **you don't write extraction logic** (except Google Maps,
-which sets `uses_llm = False` and builds places deterministically; the override is
-already written for you there).
+### Extraction quality is yours; the format is not
 
-## Tuning your extraction prompt (you own this)
+The LLM prompt is two blocks. The **format contract** (the `ExtractedPlace` JSON shape)
+is fixed and shared in [`llm_client.py`](../backend/app/integrations/llm_client.py) —
+**don't touch it.** Your **`extraction_guidance`** string is appended after it (as its
+own prompt-cached block) to encode platform quirks, what to emphasize, and few-shot
+examples. Tune that freely; keep it stable so it stays cached.
 
-The LLM prompt is two blocks:
+> **Google Maps is the exception:** it sets `uses_llm = False` and overrides
+> `extract()` to build `ExtractedPlace` deterministically from the list/place data — no
+> LLM. That override is already scaffolded for you.
 
-1. **Format contract** — shared & fixed in `llm_client.py`. Guarantees the
-   `ExtractedPlace` shape. **Don't touch it.**
-2. **Your guidance** — set `extraction_guidance` on your parser class. This is where
-   you encode platform quirks, what to emphasize, and (optionally) few-shot examples.
+### Detection is automatic
 
-```python
-class YouTubeParser(SourceParser):
-    extraction_guidance = (
-        "Input is a spoken-video transcript with timestamps. For each restaurant, "
-        "set timestamp_seconds and a deep-link source_url to that moment..."
-    )
+Your `url_patterns` register you with the
+[`registry`](../backend/app/integrations/registry.py). Any matching URL routes to you —
+nothing else to wire.
+
+### The pipeline (for context)
+
 ```
-
-It's appended after the format contract and sent as its own prompt-cached block, so
-you control extraction **quality** without changing the **output format**. Each stub
-already ships a starter `extraction_guidance` — refine it for your platform. (Google
-Maps has none: it sets `uses_llm = False` and builds places deterministically.)
-
-## Detection is automatic
-
-Your parser declares `url_patterns` (regexes). The
-[`registry`](../backend/app/integrations/registry.py) routes any matching URL to you.
-Nothing else to wire. Refine `detect_source_type()` so post vs profile vs video is
-classified correctly.
+URL ──get_parser_for_url()──► YourParser
+        ├─ fetch(url)      ← YOU: platform scraping/API → list[SourceContent]
+        ├─ extract(unit)   ← SHARED LLM, once PER unit (override only for Google Maps)
+        └─ parse(url)      ← SHARED: fans out over units, isolates per-unit failures
+                  └─► ParseResult → place matching → google_place_id → dedup → cards
+```
 
 ---
 
-## Dev loop: test your parser end to end
+## 3. How to test your result
 
-```bash
-docker compose -f ../infra/docker-compose.yml up -d   # Postgres+PostGIS + Redis
+Three levels, smallest loop first.
 
-cd backend
-python3.12 -m venv .venv            # one-time (needs Python >= 3.11)
-source .venv/bin/activate
-pip install -e '.[dev]'
-cp .env.example .env                # add ANTHROPIC_API_KEY + GOOGLE_PLACES_API_KEY
+### a) See the whole app work *without* your parser — `FAKE_IMPORTS`
 
-alembic upgrade head                # create the schema (one-time / after model changes)
-uvicorn app.main:app --reload       # http://localhost:8000/docs
-```
+Before (or while) you build `fetch()`, prove your machine + the full flow are healthy.
+In `.env` set `FAKE_IMPORTS=true`, restart uvicorn, then in the frontend paste **any**
+URL and import. A built-in fake parser returns canned Tainan restaurants and they flow
+all the way to the map. (With no `GOOGLE_PLACES_API_KEY`, matching is faked too; with a
+key set, the fake names get **real** `google_place_id`s.) Turn `FAKE_IMPORTS=false` to
+run your real parser.
 
-> The preview endpoint is stateless, so you can iterate on `fetch()` without the DB
-> up. You only need Postgres for the persisted flow (jobs/candidates/collections).
+### b) Iterate on `fetch()` — the preview endpoint (no DB, no worker)
 
-Then hit the synchronous preview endpoint with YOUR url:
+The preview endpoint runs your parser **synchronously** and returns the extracted
+places — the tightest loop for developing `fetch()`:
 
 ```bash
 curl -s localhost:8000/api/v1/imports/preview \
@@ -133,15 +192,51 @@ curl -s localhost:8000/api/v1/imports/preview \
   -d '{"url":"https://youtu.be/VIDEO_ID"}' | jq
 ```
 
-You get back the detected platform, source type, and the extracted `places[]` in
-the canonical format. Iterate on `fetch()` until the places look right.
+You get back the detected `platform`, `source_type`, `stats`, and `places[]` in the
+canonical format. Iterate until the places look right.
 
-> Before you implement `fetch()`, the endpoint returns a clean
+> Before you implement `fetch()`, this returns a clean
 > `502 parse_error: "<Parser>.fetch not implemented yet"` — that's expected.
+
+You can also drive it from Python without HTTP:
+
+```python
+from app.services import import_service
+print(import_service.preview("https://youtu.be/VIDEO_ID").model_dump_json(indent=2))
+```
+
+### c) Full end-to-end — import → review → map
+
+With `FAKE_IMPORTS=false`, Postgres up, and your keys set, use the real async flow:
+`POST /imports` (returns a job) → poll `GET /imports/{id}` → `GET /imports/{id}/candidates`
+→ `POST /imports/{id}/confirm`. Easiest is to just run the **frontend** (`cd frontend &&
+npm install && npm run dev`), log in, and paste your URL — you'll see candidates, save
+them to a list, and the pins appear on the map. The interactive API docs at
+`http://localhost:8000/docs` also let you click through every endpoint.
+
+---
+
+## Troubleshooting (real issues we hit)
+
+- **`places key loaded: False` / matching stuck on `pending`** — your
+  `GOOGLE_PLACES_API_KEY` isn't loading. Check it's in `backend/.env` (not the
+  frontend's), under the right name, no stray inline `#` comment.
+- **403 `SERVICE_DISABLED` from Places** — enable **“Places API (New)”** (not the legacy
+  “Places API”) for your Google Cloud project, then wait ~1–2 min. The error message
+  contains the exact activation URL.
+- **403 `API_KEY_HTTP_REFERRER_BLOCKED`** — that key is restricted to HTTP referrers (a
+  browser/Maps-JS key) and can't be used server-side. Use a key with **no referrer
+  restriction** for `GOOGLE_PLACES_API_KEY`.
+- **`command not found: docker`** — start Colima (`colima start`); install via
+  `brew install colima docker docker-compose`.
+- **`unknown shorthand flag: 'f'`** — use hyphenated `docker-compose` (Compose v1).
+- **`cp … # comment` fails** — zsh treats `#` literally; drop the comment.
+
+---
 
 ## Definition of done (per platform)
 
-- [ ] `fetch()` handles every `source_type` your platform supports and returns a `list[SourceContent]`
+- [ ] `fetch()` handles every `source_type` your platform supports and returns `list[SourceContent]`
 - [ ] profile/channel fans out to one `SourceContent` per post/video; single posts return a 1-element list
 - [ ] multi-place single-unit sources (thread / chaptered video) emit one `segment` per place (with `timestamp_seconds` / `source_url` where applicable)
 - [ ] `suggested_collection_name` set to something sensible
@@ -153,7 +248,7 @@ the canonical format. Iterate on `fetch()` until the places look right.
 ## Don't (MVP scope)
 
 - No private accounts, stories, comments, or login-gated content.
-- Tune your prompt via `extraction_guidance` only — don't edit the **format contract**
-  in `llm_client.py`, and don't change `base.py` or `google_places_client.py` without
+- Tune your prompt via `extraction_guidance` only — don't edit the **format contract** in
+  `llm_client.py`, and don't change `base.py` or `google_places_client.py` without
   telling the team. Those are shared contracts.
 - Don't resolve `google_place_id` yourself — that's the shared Place Matching step.

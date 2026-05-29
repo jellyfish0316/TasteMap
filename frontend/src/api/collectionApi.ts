@@ -2,6 +2,7 @@ import type {
   Collection,
   CollectionCreatePayload,
   CollectionDetail,
+  CollectionItemCreatePayload,
   CollectionUpdatePayload,
   Recommendation,
   RecommendationUpdatePayload,
@@ -32,6 +33,12 @@ export const collectionApi = {
 
   async remove(collectionId: string): Promise<void> {
     await api.delete(`/collections/${collectionId}`);
+  },
+
+  // Manually save a chosen Google place into this collection.
+  async addItem(collectionId: string, payload: CollectionItemCreatePayload): Promise<Recommendation> {
+    const { data } = await api.post<Recommendation>(`/collections/${collectionId}/items`, payload);
+    return data;
   },
 
   async updateItem(

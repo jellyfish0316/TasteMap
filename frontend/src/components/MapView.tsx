@@ -1,4 +1,5 @@
-import { APIProvider, Map } from "@vis.gl/react-google-maps";
+import { useEffect } from "react";
+import { APIProvider, Map, useMap } from "@vis.gl/react-google-maps";
 
 import type { PlaceSummary } from "@/types/place";
 
@@ -14,9 +15,22 @@ interface MapViewProps {
   pins: PlaceSummary[];
   selectedPlaceId: string | null;
   onSelectPin: (placeId: string) => void;
+  // When set, fly the camera here (a selected pin or a searched place).
+  focus: { lat: number; lng: number } | null;
 }
 
-export default function MapView({ pins, selectedPlaceId, onSelectPin }: MapViewProps) {
+// Google-Maps-style pan+zoom to a target whenever `focus` changes.
+function CameraController({ focus }: { focus: MapViewProps["focus"] }) {
+  const map = useMap();
+  useEffect(() => {
+    if (!map || !focus) return;
+    map.panTo(focus);
+    map.setZoom(16);
+  }, [map, focus]);
+  return null;
+}
+
+export default function MapView({ pins, selectedPlaceId, onSelectPin, focus }: MapViewProps) {
   if (!API_KEY) {
     return (
       <div className="flex h-full items-center justify-center bg-neutral-100 p-6 text-center text-sm text-neutral-500">
@@ -41,6 +55,7 @@ export default function MapView({ pins, selectedPlaceId, onSelectPin }: MapViewP
         disableDefaultUI={false}
         className="h-full w-full"
       >
+        <CameraController focus={focus} />
         {located.map((place) => (
           <PlacePin
             key={place.id}

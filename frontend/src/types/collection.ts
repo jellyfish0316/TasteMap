@@ -1,6 +1,6 @@
 // Mirrors backend app/schemas/collection.py and recommendation.py
 
-import type { PlaceSummary } from "./place";
+import type { PlaceCandidate, PlaceSummary } from "./place";
 
 // A saved restaurant-in-collection with its source context + the user's overlay.
 export interface Recommendation {
@@ -22,6 +22,8 @@ export interface Recommendation {
   // the user's own overlay
   status: string | null;
   note: string | null;
+  // set only when the card isn't yours (e.g. someone you follow)
+  owner: { id: string; username: string; display_name: string | null } | null;
   created_at: string;
 }
 
@@ -54,4 +56,12 @@ export interface CollectionUpdatePayload {
 export interface RecommendationUpdatePayload {
   status?: string | null;
   note?: string | null;
+}
+
+// Manually save a chosen Google place into a collection (no import pipeline).
+export interface CollectionItemCreatePayload {
+  place: PlaceCandidate;
+  note?: string | null;
+  dishes?: string[];
+  summary?: string | null;
 }

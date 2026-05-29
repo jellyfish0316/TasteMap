@@ -1,14 +1,19 @@
 import { useCallback, useEffect, useState } from "react";
-import { useParams } from "react-router-dom";
+import { useNavigate, useParams } from "react-router-dom";
 
 import { collectionApi } from "@/api/collectionApi";
 import { errorMessage } from "@/api/client";
+import { useAuthStore } from "@/stores/authStore";
 import type { CollectionDetail } from "@/types/collection";
 
 export default function CollectionPage() {
   const { collectionId } = useParams<{ collectionId: string }>();
+  const navigate = useNavigate();
+  const currentUserId = useAuthStore((s) => s.user?.id);
   const [detail, setDetail] = useState<CollectionDetail | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // Only the owner may edit/delete; others (via Explore) get a read-only view.
+  const isOwner = !!detail && detail.user_id === currentUserId;
 
   const load = useCallback(async () => {
     if (!collectionId) return;
@@ -29,6 +34,13 @@ export default function CollectionPage() {
     void load();
   }
 
+  async function deleteCollection() {
+    if (!collectionId || !detail) return;
+    if (!window.confirm(`Delete "${detail.name}" and all its places?`)) return;
+    await collectionApi.remove(collectionId);
+    navigate("/");
+  }
+
   if (error) return <p className="p-6 text-sm text-red-600">{error}</p>;
   if (!detail) return <p className="p-6 text-sm text-neutral-400">Loading…</p>;
 
@@ -36,9 +48,19 @@ export default function CollectionPage() {
     <div className="mx-auto max-w-3xl p-6">
       <div className="flex items-baseline justify-between">
         <h1 className="text-xl font-semibold text-neutral-900">{detail.name}</h1>
-        <span className="text-xs text-neutral-400">
-          {detail.is_public ? "public" : "private"} · {detail.recommendations.length} places
-        </span>
+        <div className="flex items-center gap-3">
+          <span className="text-xs text-neutral-400">
+            {detail.is_public ? "public" : "private"} · {detail.recommendations.length} places
+          </span>
+          {isOwner && (
+            <button
+              onClick={() => void deleteCollection()}
+              className="text-xs text-neutral-400 hover:text-red-600"
+            >
+              Delete list
+            </button>
+          )}
+        </div>
       </div>
       {detail.description && <p className="mt-1 text-sm text-neutral-500">{detail.description}</p>}
 
@@ -51,19 +73,21 @@ export default function CollectionPage() {
                 <p className="text-sm text-neutral-600">🍽 {rec.dishes.join(" · ")}</p>
               )}
               {rec.summary && <p className="text-sm italic text-neutral-600">“{rec.summary}”</p>}
-              {rec.author && (
-                <p className="text-xs text-neutral-400">
-                  @{rec.author}
-                  {rec.platform ? ` · ${rec.platform}` : ""}
+              {rec.note && <p className="mt-1 text-sm text-neutral-700">📝 {rec.note}</p>}
+              {(rec.author || isOwner) && (
+                <p className="mt-1 text-xs text-neutral-400">
+                  {rec.author ? `@${rec.author}${rec.platform ? ` · ${rec.platform}` : ""}` : "added by you"}
                 </p>
               )}
             </div>
-            <button
-              onClick={() => void removeItem(rec.id)}
-              className="ml-3 shrink-0 text-xs text-neutral-400 hover:text-red-600"
-            >
-              Remove
-            </button>
+            {isOwner && (
+              <button
+                onClick={() => void removeItem(rec.id)}
+                className="ml-3 shrink-0 text-xs text-neutral-400 hover:text-red-600"
+              >
+                Remove
+              </button>
+            )}
           </li>
         ))}
         {detail.recommendations.length === 0 && (

@@ -10,6 +10,12 @@ export const placeApi = {
     return data;
   },
 
+  // Pins from the public lists of people I follow.
+  async followingMap(): Promise<PlaceSummary[]> {
+    const { data } = await api.get<PlaceSummary[]>("/places/following");
+    return data;
+  },
+
   async get(placeId: string): Promise<PlaceDetail> {
     const { data } = await api.get<PlaceDetail>(`/places/${placeId}`);
     return data;

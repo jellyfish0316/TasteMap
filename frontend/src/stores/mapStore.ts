@@ -29,7 +29,11 @@ export const useMapStore = create<MapState>((set) => ({
   async fetchMap() {
     set({ loading: true, error: null });
     try {
-      set({ pins: await placeApi.myMap(), loading: false });
+      // My pins + pins from the public lists of people I follow, deduped by place id.
+      const [mine, following] = await Promise.all([placeApi.myMap(), placeApi.followingMap()]);
+      const byId = new Map<string, PlaceSummary>();
+      for (const p of [...mine, ...following]) byId.set(p.id, p);
+      set({ pins: [...byId.values()], loading: false });
     } catch (err) {
       set({ loading: false, error: errorMessage(err, "Could not load your map") });
     }

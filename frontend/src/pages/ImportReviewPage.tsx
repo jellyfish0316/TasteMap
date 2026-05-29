@@ -1,14 +1,16 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 
+import PlaceSearch from "@/components/PlaceSearch";
 import { useImportStore } from "@/stores/importStore";
 import { useUserStore } from "@/stores/userStore";
 import type { ImportCandidate } from "@/types/import";
+import type { PlaceCandidate } from "@/types/place";
 
 export default function ImportReviewPage() {
   const { jobId } = useParams<{ jobId: string }>();
   const navigate = useNavigate();
-  const { job, candidates, loadResult, confirm, error } = useImportStore();
+  const { job, candidates, loadResult, confirm, resolveCandidate, error } = useImportStore();
   const { collections, fetchCollections } = useUserStore();
 
   const [target, setTarget] = useState<"new" | string>("new");
@@ -40,6 +42,13 @@ export default function ImportReviewPage() {
       next.has(id) ? next.delete(id) : next.add(id);
       return next;
     });
+  }
+
+  // Resolve a candidate to a hand-picked place, then auto-select it for saving.
+  async function onResolve(candidateId: string, place: PlaceCandidate) {
+    const ok = await resolveCandidate(candidateId, place);
+    if (ok) setPicked((prev) => new Set(prev).add(candidateId));
+    return ok;
   }
 
   async function onConfirm() {
@@ -87,7 +96,13 @@ export default function ImportReviewPage() {
       {/* candidates */}
       <ul className="mt-4 space-y-2">
         {candidates.map((c) => (
-          <CandidateRow key={c.id} c={c} checked={picked.has(c.id)} onToggle={() => toggle(c.id)} />
+          <CandidateRow
+            key={c.id}
+            c={c}
+            checked={picked.has(c.id)}
+            onToggle={() => toggle(c.id)}
+            onResolve={(place) => onResolve(c.id, place)}
+          />
         ))}
       </ul>
 
@@ -111,24 +126,52 @@ function CandidateRow({
   c,
   checked,
   onToggle,
+  onResolve,
 }: {
   c: ImportCandidate;
   checked: boolean;
   onToggle: () => void;
+  onResolve: (place: PlaceCandidate) => Promise<boolean>;
 }) {
   const matched = c.match_status === "matched";
+  const [searching, setSearching] = useState(false);
+
   return (
-    <li className="flex gap-3 rounded-lg border border-neutral-200 p-3">
-      <input type="checkbox" checked={checked} disabled={!matched} onChange={onToggle} className="mt-1" />
-      <div className="min-w-0 flex-1">
-        <div className="flex items-center gap-2">
-          <span className="font-medium text-neutral-900">{c.name}</span>
-          <MatchBadge status={c.match_status} />
+    <li className="rounded-lg border border-neutral-200 p-3">
+      <div className="flex gap-3">
+        <input type="checkbox" checked={checked} disabled={!matched} onChange={onToggle} className="mt-1" />
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-2">
+            <span className="font-medium text-neutral-900">{c.name}</span>
+            <MatchBadge status={c.match_status} />
+            {!matched && (
+              <button
+                type="button"
+                onClick={() => setSearching((s) => !s)}
+                className="ml-auto shrink-0 text-xs text-orange-600 hover:underline"
+              >
+                {searching ? "Cancel" : "Search manually"}
+              </button>
+            )}
+          </div>
+          {c.dishes.length > 0 && <p className="text-sm text-neutral-600">🍽 {c.dishes.join(" · ")}</p>}
+          {c.summary && <p className="text-sm italic text-neutral-600">“{c.summary}”</p>}
+          {c.author && <p className="text-xs text-neutral-400">@{c.author}</p>}
         </div>
-        {c.dishes.length > 0 && <p className="text-sm text-neutral-600">🍽 {c.dishes.join(" · ")}</p>}
-        {c.summary && <p className="text-sm italic text-neutral-600">“{c.summary}”</p>}
-        {c.author && <p className="text-xs text-neutral-400">@{c.author}</p>}
       </div>
+
+      {!matched && searching && (
+        <div className="mt-3 border-t border-neutral-100 pt-3">
+          <PlaceSearch
+            defaultQuery={`${c.name} ${c.region_hint ?? ""}`.trim()}
+            autoFocus
+            onPick={async (place) => {
+              const ok = await onResolve(place);
+              if (ok) setSearching(false);
+            }}
+          />
+        </div>
+      )}
     </li>
   );
 }

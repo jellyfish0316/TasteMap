@@ -5,10 +5,12 @@ import BackgroundImportIndicator from "@/components/BackgroundImportIndicator";
 import { useAuthStore } from "@/stores/authStore";
 
 import CollectionPage from "./pages/CollectionPage";
+import ExplorePage from "./pages/ExplorePage";
 import ImportReviewPage from "./pages/ImportReviewPage";
 import LoginPage from "./pages/LoginPage";
 import MapPage from "./pages/MapPage";
 import ProfilePage from "./pages/ProfilePage";
+import UserProfilePage from "./pages/UserProfilePage";
 
 function RequireAuth({ children }: { children: ReactNode }) {
   const token = useAuthStore((s) => s.token);
@@ -28,6 +30,9 @@ function TopBar() {
       <nav className="flex items-center gap-4 text-sm text-neutral-600">
         <Link to="/" className="hover:text-neutral-900">
           Map
+        </Link>
+        <Link to="/explore" className="hover:text-neutral-900">
+          Explore
         </Link>
         <Link to="/profile" className="hover:text-neutral-900">
           {user?.display_name || user?.username || "Profile"}
@@ -85,6 +90,26 @@ export default function App() {
           <RequireAuth>
             <AppShell>
               <CollectionPage />
+            </AppShell>
+          </RequireAuth>
+        }
+      />
+      <Route
+        path="/explore"
+        element={
+          <RequireAuth>
+            <AppShell>
+              <ExplorePage />
+            </AppShell>
+          </RequireAuth>
+        }
+      />
+      <Route
+        path="/u/:userId"
+        element={
+          <RequireAuth>
+            <AppShell>
+              <UserProfilePage />
             </AppShell>
           </RequireAuth>
         }

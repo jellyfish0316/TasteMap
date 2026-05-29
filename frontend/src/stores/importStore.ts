@@ -3,6 +3,7 @@ import { create } from "zustand";
 import { errorMessage } from "@/api/client";
 import { importApi } from "@/api/importApi";
 import type { ImportCandidate, ImportConfirmPayload, ImportJob } from "@/types/import";
+import type { PlaceCandidate } from "@/types/place";
 
 const POLL_INTERVAL_MS = 1500;
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -12,11 +13,18 @@ interface ImportState {
   candidates: ImportCandidate[];
   submitting: boolean;
   error: string | null;
+  // Whether the global background indicator is showing (in-flight OR a finished
+  // result the user hasn't acknowledged yet).
+  indicatorVisible: boolean;
   // Submit a URL and poll until the worker finishes, then load candidates.
   startImport: (url: string) => Promise<ImportJob | null>;
   // Load an existing job + its candidates (e.g. opening the review page directly).
   loadResult: (jobId: string) => Promise<void>;
   confirm: (payload: ImportConfirmPayload) => Promise<string | null>;
+  // Manually pin a candidate to a chosen place; flips it to matched in place.
+  resolveCandidate: (candidateId: string, place: PlaceCandidate) => Promise<boolean>;
+  // Hide the background indicator (the user opened the review, or dismissed it).
+  dismissIndicator: () => void;
   reset: () => void;
 }
 
@@ -25,9 +33,10 @@ export const useImportStore = create<ImportState>((set, get) => ({
   candidates: [],
   submitting: false,
   error: null,
+  indicatorVisible: false,
 
   async startImport(url) {
-    set({ submitting: true, error: null, job: null, candidates: [] });
+    set({ submitting: true, error: null, job: null, candidates: [], indicatorVisible: true });
     try {
       let job = await importApi.create(url);
       set({ job });
@@ -73,7 +82,24 @@ export const useImportStore = create<ImportState>((set, get) => ({
     }
   },
 
+  async resolveCandidate(candidateId, place) {
+    const job = get().job;
+    if (!job) return false;
+    try {
+      const updated = await importApi.resolveCandidate(job.id, candidateId, place);
+      set({ candidates: get().candidates.map((c) => (c.id === candidateId ? updated : c)) });
+      return true;
+    } catch (err) {
+      set({ error: errorMessage(err, "Could not resolve this place") });
+      return false;
+    }
+  },
+
+  dismissIndicator() {
+    set({ indicatorVisible: false });
+  },
+
   reset() {
-    set({ job: null, candidates: [], submitting: false, error: null });
+    set({ job: null, candidates: [], submitting: false, error: null, indicatorVisible: false });
   },
 }));

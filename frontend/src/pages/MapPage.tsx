@@ -1,34 +1,60 @@
 import { useEffect, useState, type FormEvent } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link } from "react-router-dom";
 
-import ImportProgressModal from "@/components/ImportProgressModal";
+import { socialApi } from "@/api/socialApi";
+import AddPlaceModal from "@/components/AddPlaceModal";
+import MapSearchBar from "@/components/MapSearchBar";
 import MapView from "@/components/MapView";
 import PlaceDetailPanel from "@/components/PlaceDetailPanel";
 import { useImportStore } from "@/stores/importStore";
 import { useMapStore } from "@/stores/mapStore";
 import { useUserStore } from "@/stores/userStore";
+import type { PlaceCandidate } from "@/types/place";
+import type { FeedItem } from "@/types/social";
 
 export default function MapPage() {
-  const navigate = useNavigate();
   const { collections, fetchCollections } = useUserStore();
   const { pins, fetchMap, selectPlace, clearSelection, selectedPlace, selectedRecs, selectedLoading } =
     useMapStore();
-  const { startImport, submitting, job } = useImportStore();
+  const { startImport, submitting } = useImportStore();
   const [url, setUrl] = useState("");
+  // When set, the Add-place modal opens pre-seeded with this place (from the map search bar).
+  const [pendingPlace, setPendingPlace] = useState<PlaceCandidate | null>(null);
+  // Camera target — a new object each time so the map re-flies even to the same spot.
+  const [focus, setFocus] = useState<{ lat: number; lng: number } | null>(null);
+  // Public lists from people the user follows (Taste Circle), shown in the sidebar.
+  const [feed, setFeed] = useState<FeedItem[]>([]);
+
+  function flyTo(lat: number | null, lng: number | null) {
+    if (lat != null && lng != null) setFocus({ lat, lng });
+  }
+
+  // Pick from the map search bar: fly there AND open the add dialog seeded with it.
+  function onSearchPick(place: PlaceCandidate) {
+    flyTo(place.lat, place.lng);
+    setPendingPlace(place);
+  }
+
+  // Click a saved pin: fly there AND open its detail panel.
+  function onSelectPin(placeId: string) {
+    const pin = pins.find((p) => p.id === placeId);
+    if (pin) flyTo(pin.lat, pin.lng);
+    void selectPlace(placeId);
+  }
 
   useEffect(() => {
     void fetchCollections();
     void fetchMap();
+    void socialApi.feed().then(setFeed).catch(() => setFeed([]));
   }, [fetchCollections, fetchMap]);
 
-  async function onImport(e: FormEvent) {
+  function onImport(e: FormEvent) {
     e.preventDefault();
     if (!url.trim()) return;
-    const result = await startImport(url.trim());
-    if (result?.status === "succeeded") {
-      setUrl("");
-      navigate(`/import/${result.id}`);
-    }
+    // Fire and forget: the store keeps polling in the background and the global
+    // indicator tracks progress, so the user is free to navigate while it runs.
+    void startImport(url.trim());
+    setUrl("");
   }
 
   return (
@@ -72,15 +98,40 @@ export default function MapPage() {
               </li>
             ))}
           </ul>
+
+          {feed.length > 0 && (
+            <>
+              <h2 className="mb-2 mt-5 text-xs font-medium uppercase tracking-wide text-neutral-400">
+                Following
+              </h2>
+              <ul className="space-y-1">
+                {feed.map((item) => (
+                  <li key={item.collection.id}>
+                    <Link
+                      to={`/collections/${item.collection.id}`}
+                      className="block rounded-lg px-2 py-1.5 text-sm text-neutral-700 hover:bg-neutral-100"
+                    >
+                      {item.collection.name}
+                      <span className="ml-1 text-xs text-neutral-400">
+                        · by {item.owner.display_name || `@${item.owner.username}`}
+                      </span>
+                    </Link>
+                  </li>
+                ))}
+              </ul>
+            </>
+          )}
         </div>
       </div>
 
       {/* Map + detail overlay */}
       <div className="relative min-w-0 flex-1">
+        <MapSearchBar onPick={onSearchPick} />
         <MapView
           pins={pins}
           selectedPlaceId={selectedPlace?.id ?? null}
-          onSelectPin={(id) => void selectPlace(id)}
+          onSelectPin={onSelectPin}
+          focus={focus}
         />
         {(selectedPlace || selectedLoading) && (
           <PlaceDetailPanel
@@ -92,7 +143,16 @@ export default function MapPage() {
         )}
       </div>
 
-      {submitting && job && <ImportProgressModal />}
+      {pendingPlace && (
+        <AddPlaceModal
+          initialPlace={pendingPlace}
+          onClose={() => setPendingPlace(null)}
+          onSaved={() => {
+            void fetchMap();
+            void fetchCollections();
+          }}
+        />
+      )}
     </div>
   );
 }

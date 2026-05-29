@@ -1,5 +1,6 @@
 import type { Collection } from "@/types/collection";
 import type { ImportCandidate, ImportConfirmPayload, ImportJob } from "@/types/import";
+import type { PlaceCandidate } from "@/types/place";
 
 import { api } from "./client";
 
@@ -17,6 +18,19 @@ export const importApi = {
 
   async candidates(jobId: string): Promise<ImportCandidate[]> {
     const { data } = await api.get<ImportCandidate[]>(`/imports/${jobId}/candidates`);
+    return data;
+  },
+
+  // Pin an unmatched/ambiguous candidate to a place the user picked by hand.
+  async resolveCandidate(
+    jobId: string,
+    candidateId: string,
+    place: PlaceCandidate,
+  ): Promise<ImportCandidate> {
+    const { data } = await api.post<ImportCandidate>(
+      `/imports/${jobId}/candidates/${candidateId}/resolve`,
+      { place },
+    );
     return data;
   },
 
