@@ -216,6 +216,100 @@ them to a list, and the pins appear on the map. The interactive API docs at
 
 ---
 
+## 4. Project conventions
+
+### Adding a Python dependency (your scraper needs a library)
+
+Dependencies are declared in **[`backend/pyproject.toml`](../backend/pyproject.toml)** —
+**not** a `requirements.txt`, and there's no separate lockfile. To add one:
+
+1. Add it to the `[project].dependencies` list (runtime dep) — or `[project.optional-dependencies].dev`
+   if it's only for tests/tooling. **Pin a sensible floor**, matching the existing style:
+   ```toml
+   dependencies = [
+       ...
+       "youtube-transcript-api>=0.6",     # YouTube owner
+       "instaloader>=4.10",               # Instagram owner
+   ]
+   ```
+2. Reinstall into your venv so it's available locally:
+   ```bash
+   cd backend && source .venv/bin/activate
+   pip install -e '.[dev]'
+   ```
+3. **Commit `pyproject.toml`.** That file *is* how your dependency reaches teammates and
+   CI — CI runs `pip install -e '.[dev]'` from it on every push, so anything not in
+   `pyproject.toml` will fail for everyone else even if it works on your machine.
+
+Guidelines: keep deps **minimal and scoped** to your parser; prefer well-maintained
+libraries; don't pin an exact `==` version unless you must (it causes resolver conflicts
+across the 5 parsers); and flag anything heavy (native builds, huge transitive trees) to
+the pipeline owner before adding it.
+
+### Adding a credential or config value
+
+All config flows through **[`app/core/config.py`](../backend/app/core/config.py)**
+(pydantic-settings, reads `.env`). To add a new secret/setting:
+
+1. Add a field to the `Settings` class (snake_case; the env var is the UPPER_CASE form):
+   ```python
+   class Settings(BaseSettings):
+       ...
+       youtube_api_key: str = ""        # ← reads YOUTUBE_API_KEY from .env
+   ```
+   *(The five platform keys already exist — only add if you need something new.)*
+2. Add it to **`backend/.env.example`** with an empty/default value and a comment, so
+   teammates know it exists. **Never commit a real secret** — `.env` is gitignored;
+   `.env.example` is the template.
+3. Read it in your parser via `from app.core.config import settings` → `settings.youtube_api_key`.
+   Raise `ParseError("YOUTUBE_API_KEY is not set")` if a required key is missing.
+
+### Code style & checks (CI enforces these)
+
+```bash
+cd backend && source .venv/bin/activate
+ruff check .            # lint — must pass (CI runs this on every push/PR)
+ruff check . --fix      # auto-fix what it can
+ruff format .           # format (line length 100)
+pytest                  # run tests
+```
+
+Ruff config lives in `pyproject.toml` (`line-length = 100`, rules `E,F,I,B,UP`). Imports
+are auto-sorted (`I`). **A failing `ruff check` blocks the PR**, so run it before pushing.
+
+### Git workflow
+
+- Branch off `main`; **don't push directly to `main`.** Open a PR.
+- CI (lint + smoke test) runs on every push and must be green to merge.
+- Keep your PR scoped to **your** parser file (+ `pyproject.toml` / `config.py` /
+  `.env.example` if you added a dep/setting). Touching shared contract files
+  (`base.py`, `llm_client.py`, `google_places_client.py`) needs the pipeline owner's sign-off.
+
+### Writing robust `fetch()` (network code)
+
+- Wrap platform/API failures and raise **`app.core.errors.ParseError`** — never let a raw
+  exception escape (it would crash the worker). A whole-source failure → raise; a single
+  bad post in a profile → skip it and continue.
+- Use the already-installed **`httpx`** for HTTP unless your platform needs a specific SDK.
+- Be polite to platforms: reasonable timeouts, don't hammer (respect rate limits), and
+  **MVP scope only** — public content, no login-gated/private data.
+- `fetch()` should be reasonably **idempotent**: importing the same URL twice must not
+  double-create places (downstream dedup by `google_place_id` handles this, so just return
+  clean data).
+
+### Where do I put…? (cheat sheet)
+
+| I need to… | Edit |
+|------------|------|
+| turn a URL into content | `integrations/<you>_parser.py` → `fetch()` |
+| improve extraction quality | `extraction_guidance` on your parser class |
+| add a scraping library | `backend/pyproject.toml` → reinstall → commit |
+| add an API key / setting | `core/config.py` **and** `backend/.env.example` |
+| change the output *shape* | ❌ don't — `base.py` is a shared contract (ask the owner) |
+| resolve a `google_place_id` | ❌ don't — that's the shared matching step |
+
+---
+
 ## Troubleshooting (real issues we hit)
 
 - **`places key loaded: False` / matching stuck on `pending`** — your
