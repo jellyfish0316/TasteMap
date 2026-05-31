@@ -27,6 +27,7 @@ dependencies = [
     # external clients (shared by every platform parser)
     "httpx>=0.28",
     "anthropic>=0.40",
+    "openai>=1.40",
     # parsing helpers the platform owners may use
     "beautifulsoup4>=4.12",
     "youtube-transcript-api>=0.6",

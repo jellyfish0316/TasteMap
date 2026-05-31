@@ -94,9 +94,21 @@ class ThreadsParser(SourceParser):
         description = self._meta_content(soup, "og:description") or self._meta_content(
             soup, "twitter:description"
         )
-        text = self._best_text(soup, description)
 
-        image_urls = self._image_urls(soup)
+        # Anchor on THIS post's embedded JSON node (code == the URL's post id). The
+        # page also embeds other posts (the author's, recommended, replies), so a
+        # whole-page text scan can pick the wrong post — only fall back to that
+        # heuristic when we can't find the exact node.
+        post_id = self._post_id_from_url(canonical_url) or self._post_id_from_url(url)
+        node = self._find_post_node(soup, post_id) if post_id else None
+        if node is not None:
+            text = self._text_from_node(node) or self._best_text(soup, description)
+            image_urls = self._images_from_node(node)
+            author = self._username_from_node(node) or author
+        else:
+            text = self._best_text(soup, description)
+            image_urls = self._image_urls(soup)
+
         return SourceContent(
             platform=self.platform,
             source_url=canonical_url,
@@ -111,9 +123,81 @@ class ThreadsParser(SourceParser):
             raw={
                 "original_url": url,
                 "final_url": final_url,
-                "post_id": self._post_id_from_url(canonical_url) or self._post_id_from_url(url),
+                "post_id": post_id,
             },
         )
+
+    def _find_post_node(self, soup: BeautifulSoup, post_id: str) -> dict | None:
+        """Return the embedded media object whose `code` matches this post's id.
+
+        Threads server-renders many posts into `application/json` scripts; we want
+        the one node that actually IS this post. A real media node carries a
+        `caption` key (unlike lightweight references that only echo the code).
+        """
+        found: dict | None = None
+
+        def walk(value: object) -> None:
+            nonlocal found
+            if found is not None:
+                return
+            if isinstance(value, dict):
+                if value.get("code") == post_id and "caption" in value:
+                    found = value
+                    return
+                for nested in value.values():
+                    walk(nested)
+            elif isinstance(value, list):
+                for item in value:
+                    walk(item)
+
+        for script in soup.find_all("script", type="application/json"):
+            raw = script.string
+            if not raw or post_id not in raw:
+                continue
+            try:
+                data = json.loads(raw)
+            except json.JSONDecodeError:
+                continue
+            walk(data)
+            if found is not None:
+                break
+        return found
+
+    def _text_from_node(self, node: dict) -> str:
+        caption = node.get("caption")
+        if isinstance(caption, dict):
+            text = caption.get("text")
+        elif isinstance(caption, str):
+            text = caption
+        else:
+            text = None
+        return text.strip() if isinstance(text, str) else ""
+
+    def _username_from_node(self, node: dict) -> str | None:
+        user = node.get("user")
+        username = user.get("username") if isinstance(user, dict) else None
+        return username if isinstance(username, str) and username else None
+
+    def _images_from_node(self, node: dict) -> list[str]:
+        """Real post photos from the matched node (carousel-aware), not the avatar."""
+
+        def best_url(image_versions2: object) -> str | None:
+            candidates = image_versions2.get("candidates") if isinstance(image_versions2, dict) else None
+            if isinstance(candidates, list) and candidates:
+                url = candidates[0].get("url") if isinstance(candidates[0], dict) else None
+                return url if isinstance(url, str) else None
+            return None
+
+        urls: list[str] = []
+        carousel = node.get("carousel_media")
+        media_items = carousel if isinstance(carousel, list) and carousel else [node]
+        for media in media_items:
+            if not isinstance(media, dict):
+                continue
+            url = best_url(media.get("image_versions2"))
+            if url and url not in urls:
+                urls.append(url)
+        return urls
 
     def _best_text(self, soup: BeautifulSoup, description: str | None) -> str:
         candidates = [description or ""]

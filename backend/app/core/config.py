@@ -36,8 +36,12 @@ class Settings(BaseSettings):
     fake_imports: bool = False
 
     # Shared external services
+    #: Which LLM backend the shared extractor uses: "anthropic" or "openai".
+    llm_provider: str = "anthropic"
     anthropic_api_key: str | None = None
     llm_model: str = "claude-sonnet-4-6"
+    openai_api_key: str | None = None
+    openai_model: str = "gpt-4o-mini"
     google_places_api_key: str | None = None
 
     # Per-platform credentials (optional; each owner fills their own)

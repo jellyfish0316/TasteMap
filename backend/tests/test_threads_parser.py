@@ -61,6 +61,43 @@ def test_threads_post_prefers_food_text_from_json() -> None:
     assert content.text == "Dinner at Little Bowl was great. Order the beef noodles."
 
 
+def test_threads_post_anchors_on_matching_node_not_longer_decoy() -> None:
+    # The page embeds OTHER posts too (author's other posts, recommendations).
+    # The parser must pick the node whose `code` matches the URL — even when a
+    # different embedded post has much longer text.
+    parser = ThreadsParser()
+    html = """
+    <html>
+      <head>
+        <meta property="og:description" content="short fallback caption">
+        <link rel="canonical" href="https://www.threads.com/@chef/post/TARGET1">
+      </head>
+      <body>
+        <script type="application/json">
+          {"data": {"media": {"code": "OTHER99", "caption":
+            {"text": "DECOY a totally different and much much much longer post about ramen and sushi dinner"}}}}
+        </script>
+        <script type="application/json">
+          {"data": {"media": {"code": "TARGET1",
+            "user": {"username": "chef"},
+            "caption": {"text": "Beef noodles at Little Bowl."},
+            "image_versions2": {"candidates": [{"url": "https://img/real.jpg"}]}}}}
+        </script>
+      </body>
+    </html>
+    """
+
+    content = parser._parse_post(
+        url="https://www.threads.com/@chef/post/TARGET1",
+        final_url="https://www.threads.com/@chef/post/TARGET1",
+        html=html,
+    )
+
+    assert content.text == "Beef noodles at Little Bowl."
+    assert content.author == "chef"
+    assert content.image_urls == ["https://img/real.jpg"]
+
+
 def test_threads_profile_is_clear_unsupported_error() -> None:
     parser = ThreadsParser()
 

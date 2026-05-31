@@ -4,30 +4,51 @@ This is the SHARED extraction step every platform parser uses by default
 (`SourceParser.extract`). Platform owners normally do NOT touch this file; you
 just feed it good `SourceContent` and it returns the canonical place format.
 
-Uses the Anthropic API with prompt caching: the long system prompt (the
-extraction rules + JSON schema) is marked `cache_control`, so repeated imports
-reuse the cached prefix and only pay for the per-source content.
+The backend is selectable via `LLM_PROVIDER` (anthropic | openai):
+  * anthropic — uses prompt caching; the long system prompt (extraction rules +
+    JSON schema) is marked `cache_control`, so repeated imports reuse the cached
+    prefix and only pay for the per-source content.
+  * openai — uses Chat Completions JSON mode (`response_format=json_object`);
+    gpt-4o models cache long prompt prefixes automatically.
+Either way the output is the same canonical `ExtractedPlace[]`.
 """
 from __future__ import annotations
 
 import json
-
-from anthropic import Anthropic
+from typing import TYPE_CHECKING
 
 from app.core.config import settings
 from app.core.errors import ParseError
 from app.integrations.base import ExtractedPlace, SourceContent
 
-_client: Anthropic | None = None
+if TYPE_CHECKING:
+    from anthropic import Anthropic
+    from openai import OpenAI
+
+_anthropic_client: "Anthropic | None" = None
+_openai_client: "OpenAI | None" = None
 
 
-def _get_client() -> Anthropic:
-    global _client
-    if _client is None:
+def _get_anthropic_client() -> "Anthropic":
+    global _anthropic_client
+    if _anthropic_client is None:
         if not settings.anthropic_api_key:
             raise ParseError("ANTHROPIC_API_KEY is not set; cannot run LLM extraction.")
-        _client = Anthropic(api_key=settings.anthropic_api_key)
-    return _client
+        from anthropic import Anthropic
+
+        _anthropic_client = Anthropic(api_key=settings.anthropic_api_key)
+    return _anthropic_client
+
+
+def _get_openai_client() -> "OpenAI":
+    global _openai_client
+    if _openai_client is None:
+        if not settings.openai_api_key:
+            raise ParseError("OPENAI_API_KEY is not set; cannot run LLM extraction.")
+        from openai import OpenAI
+
+        _openai_client = OpenAI(api_key=settings.openai_api_key)
+    return _openai_client
 
 
 # --------------------------------------------------------------------------- #
@@ -95,9 +116,28 @@ def extract_places(content: SourceContent, *, guidance: str | None = None) -> li
 
     `guidance` is the calling platform's `extraction_guidance`: appended after the
     fixed format contract to tune extraction for that platform, without changing the
-    output shape.
+    output shape. Routes to the backend named by `LLM_PROVIDER`.
     """
-    client = _get_client()
+    user_content = _build_user_content(content)
+    provider = settings.llm_provider.lower()
+    if provider == "openai":
+        text = _complete_openai(user_content, guidance)
+    elif provider == "anthropic":
+        text = _complete_anthropic(user_content, guidance)
+    else:
+        raise ParseError(f"Unknown LLM_PROVIDER {settings.llm_provider!r}; use 'anthropic' or 'openai'.")
+
+    text = text.strip()
+    try:
+        data = json.loads(text)
+    except json.JSONDecodeError as exc:
+        raise ParseError(f"LLM returned non-JSON output: {text[:200]}") from exc
+
+    return [ExtractedPlace.model_validate(item) for item in data.get("places", [])]
+
+
+def _complete_anthropic(user_content: str, guidance: str | None) -> str:
+    client = _get_anthropic_client()
     system: list[dict] = [
         {"type": "text", "text": _FORMAT_CONTRACT, "cache_control": {"type": "ephemeral"}}
     ]
@@ -114,15 +154,28 @@ def extract_places(content: SourceContent, *, guidance: str | None = None) -> li
             model=settings.llm_model,
             max_tokens=4096,
             system=system,
-            messages=[{"role": "user", "content": _build_user_content(content)}],
+            messages=[{"role": "user", "content": user_content}],
         )
     except Exception as exc:  # network / API errors
         raise ParseError(f"LLM extraction failed: {exc}") from exc
+    return "".join(block.text for block in resp.content if block.type == "text")
 
-    text = "".join(block.text for block in resp.content if block.type == "text").strip()
+
+def _complete_openai(user_content: str, guidance: str | None) -> str:
+    client = _get_openai_client()
+    system_text = _FORMAT_CONTRACT
+    if guidance:
+        system_text += f"\n\nPlatform-specific guidance:\n{guidance}"
     try:
-        data = json.loads(text)
-    except json.JSONDecodeError as exc:
-        raise ParseError(f"LLM returned non-JSON output: {text[:200]}") from exc
-
-    return [ExtractedPlace.model_validate(item) for item in data.get("places", [])]
+        resp = client.chat.completions.create(
+            model=settings.openai_model,
+            max_tokens=4096,
+            response_format={"type": "json_object"},
+            messages=[
+                {"role": "system", "content": system_text},
+                {"role": "user", "content": user_content},
+            ],
+        )
+    except Exception as exc:  # network / API errors
+        raise ParseError(f"LLM extraction failed: {exc}") from exc
+    return resp.choices[0].message.content or ""
