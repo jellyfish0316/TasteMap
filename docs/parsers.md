@@ -172,6 +172,12 @@ URL ──get_parser_for_url()──► YourParser
 
 Three levels, smallest loop first.
 
+> **Parser owners only need to use the backend preview endpoint for parser work.**
+> The web client is not actively maintained right now, and not everyone has a Mac for
+> testing the mobile end-to-end flow, so those are **not required** for parser
+> validation. If the preview response has the right platform/source type, stats, and
+> canonical `places[]`, your parser side is ready to review.
+
 ### a) See the whole app work *without* your parser — `FAKE_IMPORTS`
 
 Before (or while) you build `fetch()`, prove your machine + the full flow are healthy.
@@ -181,10 +187,11 @@ all the way to the map. (With no `GOOGLE_PLACES_API_KEY`, matching is faked too;
 key set, the fake names get **real** `google_place_id`s.) Turn `FAKE_IMPORTS=false` to
 run your real parser.
 
-### b) Iterate on `fetch()` — the preview endpoint (no DB, no worker)
+### b) Iterate on `fetch()` — the preview endpoint (the main parser test)
 
 The preview endpoint runs your parser **synchronously** and returns the extracted
-places — the tightest loop for developing `fetch()`:
+places — the tightest loop for developing `fetch()`. This is the default way to test
+and review parser changes:
 
 ```bash
 curl -s localhost:8000/api/v1/imports/preview \
@@ -205,14 +212,14 @@ from app.services import import_service
 print(import_service.preview("https://youtu.be/VIDEO_ID").model_dump_json(indent=2))
 ```
 
-### c) Full end-to-end — import → review → map
+### c) Optional full end-to-end — import → review → map
 
 With `FAKE_IMPORTS=false`, Postgres up, and your keys set, use the real async flow:
 `POST /imports` (returns a job) → poll `GET /imports/{id}` → `GET /imports/{id}/candidates`
-→ `POST /imports/{id}/confirm`. Easiest is to just run the **frontend** (`cd frontend &&
-npm install && npm run dev`), log in, and paste your URL — you'll see candidates, save
-them to a list, and the pins appear on the map. The interactive API docs at
-`http://localhost:8000/docs` also let you click through every endpoint.
+→ `POST /imports/{id}/confirm`. This is useful for the pipeline/app owner, but parser
+owners do **not** need to complete it before review. The interactive API docs at
+`http://localhost:8000/docs` let you click through every endpoint if you want to test
+the full backend flow.
 
 ---
 
