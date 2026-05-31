@@ -1,0 +1,11 @@
+{
+  "name": "@tastemap/types",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Shared TypeScript types mirroring the backend schemas. Consumed as source by web (Vite) and mobile (Metro).",
+  "types": "./src/index.ts",
+  "main": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts"
+  }
+}
