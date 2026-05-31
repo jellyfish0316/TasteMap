@@ -1,7 +1,7 @@
 import { collectionApi } from "@tastemap/api-client";
 import { colors } from "@tastemap/tokens";
 import type { Collection, PlaceSummary } from "@tastemap/types";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { FlatList, Modal, Pressable, Text, View } from "react-native";
 import MapView, { Marker, PROVIDER_DEFAULT } from "react-native-maps";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -84,30 +84,34 @@ export default function MapScreen() {
     return mapPins;
   }, [filter, mapPins]);
 
-  const visiblePinIds = useMemo(
-    () => new Set(visiblePins.map((pin) => pin.id)),
-    [visiblePins],
-  );
+  // react-native-maps@1.18 crashes on Fabric (Expo Go) when markers are
+  // added/removed from a live map (NSRangeException in -[AIRMap insertReactSubview]).
+  // Remount the map whenever the visible set changes instead of mutating it,
+  // and keep the camera where the user left it via mapRegion.
+  const mapRegion = useRef(INITIAL_REGION);
+  const mapKey = useMemo(() => visiblePins.map((pin) => pin.id).join("|"), [visiblePins]);
 
   return (
     <View className="flex-1 bg-bg">
-      <MapView provider={PROVIDER_DEFAULT} style={{ flex: 1 }} initialRegion={INITIAL_REGION}>
-        {mapPins.map((pin) => {
-          const visible = visiblePinIds.has(pin.id);
-          return (
+      <MapView
+        key={mapKey}
+        provider={PROVIDER_DEFAULT}
+        style={{ flex: 1 }}
+        initialRegion={mapRegion.current}
+        onRegionChangeComplete={(region) => {
+          mapRegion.current = region;
+        }}
+      >
+        {visiblePins.map((pin) => (
           <Marker
             key={pin.id}
             identifier={pin.id}
             coordinate={{ latitude: pin.lat, longitude: pin.lng }}
-            opacity={visible ? 1 : 0.01}
             pinColor={pin.isMine ? colors.pin.mine : colors.pin.circle}
             tracksViewChanges={false}
-            onPress={() => {
-              if (visible) setSelected(pin);
-            }}
+            onPress={() => setSelected(pin)}
           />
-          );
-        })}
+        ))}
       </MapView>
 
       {/* floating title */}
