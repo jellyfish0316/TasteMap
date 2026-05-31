@@ -21,6 +21,21 @@ const INITIAL_REGION = {
   longitudeDelta: 0.08,
 };
 
+type MapPin = PlaceSummary & {
+  lat: number;
+  lng: number;
+  isMine: boolean;
+  isFollowing: boolean;
+};
+
+function validCoordinate(pin: PlaceSummary): { lat: number; lng: number } | null {
+  const lat = Number(pin.lat);
+  const lng = Number(pin.lng);
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
+  if (lat < -90 || lat > 90 || lng < -180 || lng > 180) return null;
+  return { lat, lng };
+}
+
 export default function MapScreen() {
   const { ready, token } = useAuthStore();
   const { pins, minePins, followingPins, fetchMap } = useMapStore();
@@ -42,32 +57,57 @@ export default function MapScreen() {
     void refresh();
   }, [ready, token]);
 
+  const minePinIds = useMemo(() => new Set(minePins.map((pin) => pin.id)), [minePins]);
+  const followingPinIds = useMemo(
+    () => new Set(followingPins.map((pin) => pin.id)),
+    [followingPins],
+  );
+
+  const mapPins = useMemo<MapPin[]>(() => {
+    return pins.flatMap((pin) => {
+      const coordinate = validCoordinate(pin);
+      if (!coordinate) return [];
+      return [
+        {
+          ...pin,
+          ...coordinate,
+          isMine: minePinIds.has(pin.id),
+          isFollowing: followingPinIds.has(pin.id),
+        },
+      ];
+    });
+  }, [followingPinIds, minePinIds, pins]);
+
   const visiblePins = useMemo(() => {
-    const source = filter === "mine" ? minePins : filter === "following" ? followingPins : pins;
-    return source.filter(
-      (pin) =>
-        Number.isFinite(pin.lat) &&
-        Number.isFinite(pin.lng) &&
-        pin.lat != null &&
-        pin.lng != null &&
-        pin.lat >= -90 &&
-        pin.lat <= 90 &&
-        pin.lng >= -180 &&
-        pin.lng <= 180,
-    );
-  }, [filter, followingPins, minePins, pins]);
+    if (filter === "mine") return mapPins.filter((pin) => pin.isMine);
+    if (filter === "following") return mapPins.filter((pin) => pin.isFollowing);
+    return mapPins;
+  }, [filter, mapPins]);
+
+  const visiblePinIds = useMemo(
+    () => new Set(visiblePins.map((pin) => pin.id)),
+    [visiblePins],
+  );
 
   return (
     <View className="flex-1 bg-bg">
       <MapView provider={PROVIDER_DEFAULT} style={{ flex: 1 }} initialRegion={INITIAL_REGION}>
-        {visiblePins.map((pin) => (
+        {mapPins.map((pin) => {
+          const visible = visiblePinIds.has(pin.id);
+          return (
           <Marker
-            key={`${filter}-${pin.id}`}
-            coordinate={{ latitude: pin.lat as number, longitude: pin.lng as number }}
-            pinColor={minePins.some((mine) => mine.id === pin.id) ? colors.pin.mine : colors.pin.circle}
-            onPress={() => setSelected(pin)}
+            key={pin.id}
+            identifier={pin.id}
+            coordinate={{ latitude: pin.lat, longitude: pin.lng }}
+            opacity={visible ? 1 : 0.01}
+            pinColor={pin.isMine ? colors.pin.mine : colors.pin.circle}
+            tracksViewChanges={false}
+            onPress={() => {
+              if (visible) setSelected(pin);
+            }}
           />
-        ))}
+          );
+        })}
       </MapView>
 
       {/* floating title */}
