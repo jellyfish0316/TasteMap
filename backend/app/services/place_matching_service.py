@@ -29,7 +29,7 @@ from app.repositories import place_repository
 from app.utils.normalize import normalize_name
 
 #: Top candidate at/above this name-similarity is accepted automatically.
-STRONG_MATCH = 0.82
+STRONG_MATCH = 0.72
 #: Below this, we treat the search as a miss (no usable candidate).
 WEAK_MATCH = 0.45
 #: How many Google candidates to keep for the review UI when ambiguous.

@@ -123,12 +123,12 @@ export function ImportFlowModal({
     });
   }
 
-  async function resolveCandidate(place: PlaceCandidate) {
-    if (!job || !resolvingCandidate) return;
+  async function applyResolve(candidateId: string, place: PlaceCandidate) {
+    if (!job) return;
     setBusy(true);
     setError(null);
     try {
-      const updated = await importApi.resolveCandidate(job.id, resolvingCandidate.id, place);
+      const updated = await importApi.resolveCandidate(job.id, candidateId, place);
       setCandidates((items) =>
         items.map((item) => (item.id === updated.id ? updated : item)),
       );
@@ -141,6 +141,11 @@ export function ImportFlowModal({
     } finally {
       setBusy(false);
     }
+  }
+
+  async function resolveCandidate(place: PlaceCandidate) {
+    if (!resolvingCandidate) return;
+    await applyResolve(resolvingCandidate.id, place);
   }
 
   return (
@@ -274,6 +279,10 @@ export function ImportFlowModal({
             renderItem={({ item }) => {
               const disabled = item.match_status !== "matched";
               const selected = selectedIds.has(item.id);
+              // needs_review ships a ranked list of Google candidates — let the user
+              // tap one directly instead of re-searching by hand.
+              const options = (item.match_options ?? []) as unknown as PlaceCandidate[];
+              const hasOptions = item.match_status === "needs_review" && options.length > 0;
               return (
                 <Pressable
                   onPress={() => toggle(item)}
@@ -317,13 +326,39 @@ export function ImportFlowModal({
                       ))}
                     </View>
                   )}
+                  {hasOptions && (
+                    <View className="mt-3 gap-2">
+                      <Text className="font-sans text-xs font-extrabold uppercase text-ink-3">
+                        是哪一間？
+                      </Text>
+                      {options.map((opt) => (
+                        <Pressable
+                          key={opt.google_place_id}
+                          onPress={() => applyResolve(item.id, opt)}
+                          className="rounded-md border border-line-2 bg-surface-2 p-3"
+                        >
+                          <Text className="font-sans text-sm font-extrabold text-ink">
+                            {opt.name}
+                          </Text>
+                          {!!opt.address && (
+                            <Text className="mt-0.5 font-sans text-xs text-ink-3">{opt.address}</Text>
+                          )}
+                          {opt.rating != null && (
+                            <Text className="mt-0.5 font-sans text-xs text-ink-3">
+                              ★ {opt.rating} · {opt.user_rating_count ?? 0}
+                            </Text>
+                          )}
+                        </Pressable>
+                      ))}
+                    </View>
+                  )}
                   {item.match_status !== "matched" && (
                     <Pressable
                       onPress={() => setResolvingCandidate(item)}
                       className="mt-3 h-10 items-center justify-center rounded-md border border-line-2 bg-surface-2"
                     >
                       <Text className="font-sans text-sm font-extrabold text-accent-ink">
-                        手動搜尋配對
+                        {hasOptions ? "都不是，手動搜尋" : "手動搜尋配對"}
                       </Text>
                     </Pressable>
                   )}

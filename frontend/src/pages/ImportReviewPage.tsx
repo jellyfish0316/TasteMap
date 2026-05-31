@@ -134,6 +134,10 @@ function CandidateRow({
   onResolve: (place: PlaceCandidate) => Promise<boolean>;
 }) {
   const matched = c.match_status === "matched";
+  // needs_review ships a ranked list of Google candidates the backend already found —
+  // surface them as a one-tap pick list instead of making the user re-search.
+  const options = (c.match_options ?? []) as unknown as PlaceCandidate[];
+  const hasOptions = !matched && options.length > 0;
   const [searching, setSearching] = useState(false);
 
   return (
@@ -144,7 +148,7 @@ function CandidateRow({
           <div className="flex items-center gap-2">
             <span className="font-medium text-neutral-900">{c.name}</span>
             <MatchBadge status={c.match_status} />
-            {!matched && (
+            {!matched && !hasOptions && (
               <button
                 type="button"
                 onClick={() => setSearching((s) => !s)}
@@ -159,6 +163,39 @@ function CandidateRow({
           {c.author && <p className="text-xs text-neutral-400">@{c.author}</p>}
         </div>
       </div>
+
+      {/* needs_review: pick from the candidates the backend already ranked */}
+      {hasOptions && (
+        <div className="mt-3 border-t border-neutral-100 pt-3">
+          <p className="mb-2 text-xs text-neutral-500">Which one is it?</p>
+          <ul className="space-y-1">
+            {options.map((o) => (
+              <li key={o.google_place_id}>
+                <button
+                  type="button"
+                  onClick={() => onResolve(o)}
+                  className="w-full rounded border border-neutral-200 px-3 py-2 text-left hover:border-orange-400 hover:bg-orange-50"
+                >
+                  <span className="block text-sm font-medium text-neutral-900">{o.name}</span>
+                  {o.address && <span className="block text-xs text-neutral-500">{o.address}</span>}
+                  {o.rating != null && (
+                    <span className="text-xs text-neutral-400">
+                      ★ {o.rating} · {o.user_rating_count ?? 0}
+                    </span>
+                  )}
+                </button>
+              </li>
+            ))}
+          </ul>
+          <button
+            type="button"
+            onClick={() => setSearching((s) => !s)}
+            className="mt-2 text-xs text-orange-600 hover:underline"
+          >
+            {searching ? "Cancel" : "None of these — search manually"}
+          </button>
+        </div>
+      )}
 
       {!matched && searching && (
         <div className="mt-3 border-t border-neutral-100 pt-3">
