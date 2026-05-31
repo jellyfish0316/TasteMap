@@ -169,14 +169,14 @@ export default function MapScreen() {
         </View>
       </SafeAreaView>
 
-      <SafeAreaView edges={["bottom"]} className="absolute bottom-0 left-0 right-0">
+      <View className="absolute bottom-1 left-0 right-0">
         <Pressable
           onPress={openImport}
-          className="absolute bottom-24 right-4 h-12 flex-row items-center justify-center gap-2 rounded-pill bg-accent px-5 shadow-sh-3"
+          className="absolute bottom-20 right-4 h-12 flex-row items-center justify-center gap-2 rounded-pill bg-accent px-5 shadow-sh-3"
         >
           <Text className="font-sans text-base font-extrabold text-on-accent">↗ 貼連結匯入</Text>
         </Pressable>
-        <View className="mx-3 mb-3 flex-row gap-2">
+        <View className="mx-3 mb-0 flex-row gap-2">
           <Pressable
             onPress={() => setCollectionsOpen(true)}
             className="flex-1 rounded-lg border border-line bg-surface px-4 py-3 shadow-sh-3"
@@ -186,14 +186,8 @@ export default function MapScreen() {
               {visiblePins.length} 個地點 · {collections.length} 個清單
             </Text>
           </Pressable>
-          <Pressable
-            onPress={refresh}
-            className="h-12 w-12 items-center justify-center rounded-full bg-surface shadow-sh-2"
-          >
-            <Text className="font-sans text-base font-extrabold text-ink">↻</Text>
-          </Pressable>
         </View>
-      </SafeAreaView>
+      </View>
 
       <PlaceDetailSheet
         placeId={selected?.id ?? null}

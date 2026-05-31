@@ -1,11 +1,20 @@
+import { Ionicons } from "@expo/vector-icons";
 import { colors } from "@tastemap/tokens";
 import { Tabs } from "expo-router";
-import { Text } from "react-native";
+import type { ComponentProps } from "react";
 
-// Emoji placeholders for the tab icons — to be swapped for the design's line
-// icons later. Meaning stays legible (map / explore / profile).
-function TabIcon({ glyph, focused }: { glyph: string; focused: boolean }) {
-  return <Text style={{ fontSize: 20, opacity: focused ? 1 : 0.5 }}>{glyph}</Text>;
+type IoniconName = ComponentProps<typeof Ionicons>["name"];
+
+function TabIcon({
+  name,
+  color,
+  size,
+}: {
+  name: IoniconName;
+  color: string;
+  size: number;
+}) {
+  return <Ionicons name={name} size={size} color={color} />;
 }
 
 export default function TabsLayout() {
@@ -26,21 +35,27 @@ export default function TabsLayout() {
         name="index"
         options={{
           title: "地圖",
-          tabBarIcon: ({ focused }) => <TabIcon glyph="🗺️" focused={focused} />,
+          tabBarIcon: ({ focused, color, size }) => (
+            <TabIcon name={focused ? "map" : "map-outline"} color={color} size={size} />
+          ),
         }}
       />
       <Tabs.Screen
         name="explore"
         options={{
           title: "探索",
-          tabBarIcon: ({ focused }) => <TabIcon glyph="🔍" focused={focused} />,
+          tabBarIcon: ({ focused, color, size }) => (
+            <TabIcon name={focused ? "search" : "search-outline"} color={color} size={size} />
+          ),
         }}
       />
       <Tabs.Screen
         name="profile"
         options={{
           title: "我的",
-          tabBarIcon: ({ focused }) => <TabIcon glyph="👤" focused={focused} />,
+          tabBarIcon: ({ focused, color, size }) => (
+            <TabIcon name={focused ? "person" : "person-outline"} color={color} size={size} />
+          ),
         }}
       />
     </Tabs>

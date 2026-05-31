@@ -56,6 +56,9 @@ export function CollectionDetailModal({
   const [error, setError] = useState<string | null>(null);
   const [editing, setEditing] = useState<Recommendation | null>(null);
   const [manageOpen, setManageOpen] = useState(false);
+  // After deleting, the edit sheet must finish dismissing before we close the
+  // detail sheet — dismissing two stacked iOS pageSheets at once freezes the UI.
+  const [closeAfterManage, setCloseAfterManage] = useState(false);
 
   async function reload() {
     if (!collectionId) return;
@@ -180,14 +183,19 @@ export function CollectionDetailModal({
           collection={detail}
           visible={manageOpen}
           onClose={() => setManageOpen(false)}
+          onDismiss={() => {
+            if (!closeAfterManage) return;
+            setCloseAfterManage(false);
+            onChanged?.();
+            onClose();
+          }}
           onSaved={async () => {
             setManageOpen(false);
             await reload();
           }}
           onDeleted={() => {
+            setCloseAfterManage(true);
             setManageOpen(false);
-            onChanged?.();
-            onClose();
           }}
         />
       </SafeAreaView>
@@ -199,12 +207,14 @@ function ManageCollectionModal({
   collection,
   visible,
   onClose,
+  onDismiss,
   onSaved,
   onDeleted,
 }: {
   collection: CollectionDetail | null;
   visible: boolean;
   onClose: () => void;
+  onDismiss?: () => void;
   onSaved: () => Promise<void>;
   onDeleted: () => void;
 }) {
@@ -259,7 +269,12 @@ function ManageCollectionModal({
   }
 
   return (
-    <Modal visible={visible} animationType="slide" presentationStyle="pageSheet">
+    <Modal
+      visible={visible}
+      animationType="slide"
+      presentationStyle="pageSheet"
+      onDismiss={onDismiss}
+    >
       <SafeAreaView className="flex-1 bg-bg">
         <View className="flex-row items-center justify-between px-4 pb-3 pt-2">
           <View>

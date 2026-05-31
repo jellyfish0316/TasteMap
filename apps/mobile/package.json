@@ -11,6 +11,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@expo/vector-icons": "~14.0.4",
     "@tastemap/api-client": "*",
     "@tastemap/tokens": "*",
     "@tastemap/types": "*",
