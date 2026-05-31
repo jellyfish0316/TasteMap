@@ -1,0 +1,23 @@
+{
+  "expo": {
+    "name": "TasteMap",
+    "slug": "tastemap",
+    "scheme": "tastemap",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "light",
+    "newArchEnabled": false,
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.tastemap.app",
+      "infoPlist": {
+        "NSLocationWhenInUseUsageDescription": "TasteMap shows nearby saved places on the map."
+      }
+    },
+    "android": {
+      "package": "com.tastemap.app",
+      "permissions": ["ACCESS_FINE_LOCATION", "ACCESS_COARSE_LOCATION"]
+    },
+    "plugins": ["expo-router", "expo-secure-store"]
+  }
+}

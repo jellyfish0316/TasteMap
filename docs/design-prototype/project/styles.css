@@ -1,0 +1,106 @@
+/* ─────────────────────────────────────────────────────────────
+   TasteMap — design tokens & base
+   Soft & modern · warm stone neutrals · amber accent
+   ───────────────────────────────────────────────────────────── */
+
+:root {
+  /* type */
+  --font: 'Plus Jakarta Sans', 'Noto Sans TC', -apple-system, system-ui, sans-serif;
+
+  /* surfaces & ink (warm) */
+  --bg:         #f6f3ed;
+  --surface:    #ffffff;
+  --surface-2:  #faf8f4;
+  --surface-3:  #f1ece4;
+  --ink:        #211d18;
+  --ink-2:      #5c554c;
+  --ink-3:      #938b80;
+  --ink-4:      #b7afa3;
+  --line:       #ece6dc;
+  --line-2:     #e0d9cd;
+
+  /* accent (amber) — tweakable */
+  --accent:      #d97706;
+  --accent-deep: #b45309;
+  --accent-ink:  #92400e;
+  --accent-tint: #fef0d6;
+  --accent-wash: #fdf8f0;
+  --on-accent:   #ffffff;
+
+  /* status semantics */
+  --ok:        #1a7f48;
+  --ok-bg:     #e4f3ea;
+  --warn:      #b45309;
+  --warn-bg:   #fbeccf;
+  --mute:      #837b70;
+  --mute-bg:   #efebe3;
+  --danger:    #c0392b;
+  --danger-bg: #fbeae7;
+
+  /* radii — tweakable via --r-scale */
+  --r-scale: 1;
+  --r-xs: calc(8px  * var(--r-scale));
+  --r-sm: calc(12px * var(--r-scale));
+  --r-md: calc(16px * var(--r-scale));
+  --r-lg: calc(22px * var(--r-scale));
+  --r-xl: calc(28px * var(--r-scale));
+  --r-pill: 999px;
+
+  /* elevation */
+  --sh-1: 0 1px 2px rgba(33,29,24,.05), 0 1px 3px rgba(33,29,24,.04);
+  --sh-2: 0 2px 6px rgba(33,29,24,.06), 0 8px 20px rgba(33,29,24,.07);
+  --sh-3: 0 8px 24px rgba(33,29,24,.10), 0 18px 44px rgba(33,29,24,.13);
+  --sh-pin: 0 3px 8px rgba(33,29,24,.22), 0 1px 2px rgba(33,29,24,.18);
+}
+
+* { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+
+body {
+  margin: 0;
+  font-family: var(--font);
+  color: var(--ink);
+  background: #2a2622;
+}
+
+button { font-family: inherit; cursor: pointer; border: none; background: none; color: inherit; }
+input, textarea { font-family: inherit; }
+
+/* the app viewport inside the phone */
+.tm-app {
+  position: absolute; inset: 0;
+  background: var(--bg);
+  display: flex; flex-direction: column;
+  overflow: hidden;
+  font-size: 15px;
+  color: var(--ink);
+}
+
+/* scrollable region with hidden scrollbars */
+.tm-scroll { overflow-y: auto; overflow-x: hidden; -webkit-overflow-scrolling: touch; }
+.tm-scroll::-webkit-scrollbar { width: 0; height: 0; }
+
+/* safe areas inside device */
+.safe-top { padding-top: 56px; }
+.safe-bottom { padding-bottom: 34px; }
+
+/* generic helpers */
+.row { display: flex; align-items: center; }
+.col { display: flex; flex-direction: column; }
+.gap-1 { gap: 4px; } .gap-2 { gap: 8px; } .gap-3 { gap: 12px; } .gap-4 { gap: 16px; }
+.grow { flex: 1; min-width: 0; }
+.muted { color: var(--ink-3); }
+.ellipsis { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* fade/slide animations */
+@keyframes tm-fade { from { opacity: 0; } to { opacity: 1; } }
+@keyframes tm-sheet-up { from { transform: translateY(100%); } to { transform: translateY(0); } }
+@keyframes tm-pop { from { opacity: 0; transform: scale(.96) translateY(6px); } to { opacity: 1; transform: scale(1) translateY(0); } }
+@keyframes tm-pin-drop { 0% { opacity: 0; transform: translate(-50%,-100%) scale(.4); } 60% { transform: translate(-50%,-100%) scale(1.08); } 100% { opacity: 1; transform: translate(-50%,-100%) scale(1); } }
+@keyframes tm-spin { to { transform: rotate(360deg); } }
+@keyframes tm-bar { 0% { left: -40%; } 100% { left: 100%; } }
+@keyframes tm-pulse { 0%,100% { opacity: 1; } 50% { opacity: .45; } }
+
+.spin { animation: tm-spin .8s linear infinite; }
+
+/* focus ring */
+.focusable:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }

@@ -1,4 +1,7 @@
-import axios from "axios";
+// Web wiring for the shared @tastemap/api-client. This configures the
+// platform-agnostic client with the web's token storage (localStorage) and 401
+// behavior (bounce to /login). Imported once at startup from main.tsx.
+import { configureApi, client } from "@tastemap/api-client";
 
 export const TOKEN_KEY = "tastemap_token";
 
@@ -11,33 +14,17 @@ export function setToken(token: string | null): void {
   else localStorage.removeItem(TOKEN_KEY);
 }
 
-export const api = axios.create({
+configureApi({
   baseURL: import.meta.env.VITE_API_BASE_URL || "/api/v1",
-});
-
-// Attach the bearer token to every request.
-api.interceptors.request.use((config) => {
-  const token = getToken();
-  if (token) config.headers.Authorization = `Bearer ${token}`;
-  return config;
-});
-
-// On 401, drop the dead token and bounce to login.
-api.interceptors.response.use(
-  (response) => response,
-  (error) => {
-    if (error.response?.status === 401) {
-      setToken(null);
-      if (window.location.pathname !== "/login") window.location.assign("/login");
-    }
-    return Promise.reject(error);
+  getToken,
+  onUnauthorized: () => {
+    setToken(null);
+    if (window.location.pathname !== "/login") window.location.assign("/login");
   },
-);
+});
 
-// Backend errors are shaped { error: { code, message } }.
-export function errorMessage(err: unknown, fallback = "Something went wrong"): string {
-  if (axios.isAxiosError(err)) {
-    return err.response?.data?.error?.message ?? err.message ?? fallback;
-  }
-  return fallback;
-}
+// The configured axios instance (back-compat for any direct importers).
+export const api = client();
+
+// Re-export the shared error formatter so existing `@/api/client` imports work.
+export { errorMessage } from "@tastemap/api-client";
