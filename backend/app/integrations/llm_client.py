@@ -133,7 +133,14 @@ def extract_places(content: SourceContent, *, guidance: str | None = None) -> li
     except json.JSONDecodeError as exc:
         raise ParseError(f"LLM returned non-JSON output: {text[:200]}") from exc
 
-    return [ExtractedPlace.model_validate(item) for item in data.get("places", [])]
+    places = [ExtractedPlace.model_validate(item) for item in data.get("places", [])]
+    # Default each place's deep link to the unit it came from. For a profile fan-out
+    # every unit is a distinct post URL, so this gives each card a correct jump-back
+    # link even when the LLM didn't echo one.
+    for place in places:
+        if not place.source_url:
+            place.source_url = content.source_url
+    return places
 
 
 def _complete_anthropic(user_content: str, guidance: str | None) -> str:

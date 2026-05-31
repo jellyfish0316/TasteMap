@@ -34,6 +34,10 @@ class Settings(BaseSettings):
     #: DEV/TEST ONLY. Route every import to a built-in fake parser with canned data
     #: and synthesize place matches — no scraping, no API keys. Never enable in prod.
     fake_imports: bool = False
+    #: Profile/channel fan-out cap: max posts a single profile import will fetch +
+    #: extract. Each post is one LLM call, so this bounds cost/latency — especially
+    #: under CELERY_TASK_ALWAYS_EAGER (the whole loop runs inside the request).
+    profile_max_posts: int = 25
 
     # Shared external services
     #: Which LLM backend the shared extractor uses: "anthropic" or "openai".

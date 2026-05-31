@@ -7,11 +7,11 @@ import MapView, { Marker, PROVIDER_DEFAULT } from "react-native-maps";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import { CollectionDetailModal, CollectionRow } from "@/components/CollectionDetailView";
-import { ImportFlowModal } from "@/components/ImportFlowModal";
 import { PlaceDetailSheet } from "@/components/PlaceDetailSheet";
 import { PlaceSearchModal } from "@/components/PlaceSearchModal";
 import { EmptyState, IconButton } from "@/components/mobileUi";
 import { useAuthStore } from "@/stores/authStore";
+import { useImportStore } from "@/stores/importStore";
 import { useMapStore } from "@/stores/mapStore";
 
 const INITIAL_REGION = {
@@ -45,7 +45,7 @@ export default function MapScreen() {
   const [collectionsOpen, setCollectionsOpen] = useState(false);
   const [collectionDetailId, setCollectionDetailId] = useState<string | null>(null);
   const [searchOpen, setSearchOpen] = useState(false);
-  const [importOpen, setImportOpen] = useState(false);
+  const openImport = useImportStore((s) => s.openModal);
 
   async function refresh() {
     if (!ready || !token) return;
@@ -167,7 +167,7 @@ export default function MapScreen() {
 
       <SafeAreaView edges={["bottom"]} className="absolute bottom-0 left-0 right-0">
         <Pressable
-          onPress={() => setImportOpen(true)}
+          onPress={openImport}
           className="absolute bottom-24 right-4 h-12 flex-row items-center justify-center gap-2 rounded-pill bg-accent px-5 shadow-sh-3"
         >
           <Text className="font-sans text-base font-extrabold text-on-accent">↗ 貼連結匯入</Text>
@@ -205,19 +205,13 @@ export default function MapScreen() {
         onClose={() => setSearchOpen(false)}
         onSaved={() => void refresh()}
       />
-      <ImportFlowModal
-        visible={importOpen}
-        collections={collections}
-        onClose={() => setImportOpen(false)}
-        onDone={() => void refresh()}
-      />
       <CollectionsModal
         visible={collectionsOpen}
         collections={collections}
         onClose={() => setCollectionsOpen(false)}
         onOpenImport={() => {
           setCollectionsOpen(false);
-          setImportOpen(true);
+          openImport();
         }}
         onOpenList={(id) => {
           setCollectionsOpen(false);

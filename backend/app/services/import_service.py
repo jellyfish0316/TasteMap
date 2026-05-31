@@ -32,6 +32,7 @@ from app.repositories import (
     recommendation_repository,
 )
 from app.services import extraction_service, parser_service, place_matching_service
+from app.utils.normalize import normalize_name
 
 logger = logging.getLogger(__name__)
 
@@ -84,15 +85,18 @@ def run_import_job(db: Session, job_id: uuid.UUID) -> ImportJob:
     units_failed = 0
     suggested = units[0].suggested_collection_name if units else None
     source_type = units[0].source_type if units else None
+    author = units[0].author if units else None
 
+    extracted: list[ExtractedPlace] = []
     for unit in units:
         try:
-            places = extraction_service.extract(parser, unit)
+            extracted.extend(extraction_service.extract(parser, unit))
         except ParseError:
             units_failed += 1  # isolate: skip this unit, keep importing
-            continue
-        for place in places:
-            _persist_candidate(db, job, parser.platform, unit.author, place)
+
+    # Collapse the same restaurant mentioned across posts into ONE candidate card.
+    for place, outcome in _match_and_dedup(db, _dedup_by_name(extracted)):
+        _persist_candidate(db, job, parser.platform, author, place, outcome)
 
     job.source_type = source_type
     import_repository.mark_succeeded(
@@ -105,19 +109,76 @@ def run_import_job(db: Session, job_id: uuid.UUID) -> ImportJob:
     return job
 
 
-def _persist_candidate(db: Session, job: ImportJob, platform: str, author: str | None,
-                       place: ExtractedPlace) -> ImportCandidate:
-    """Match one extracted place and store it as a reviewable candidate."""
-    try:
-        outcome = place_matching_service.match(db, place)
-        match_status = outcome.status
-        matched_place_id = outcome.place.id if outcome.place else None
-        match_options = outcome.options
-    except Exception as exc:  # noqa: BLE001 — matching must never crash the import
-        # Keep the card; leave it pending so it can be re-matched / picked manually.
-        logger.warning("place matching failed for %r: %s", place.name, exc, exc_info=True)
-        match_status, matched_place_id, match_options = MatchStatus.pending, None, None
+def _union(a: list[str], b: list[str]) -> list[str]:
+    """a + b, order-preserving, no duplicates."""
+    out = list(a)
+    for item in b:
+        if item not in out:
+            out.append(item)
+    return out
 
+
+def _merge_place(into: ExtractedPlace, other: ExtractedPlace) -> None:
+    """Fold a duplicate mention into `into`: union the lists, keep the first
+    non-empty scalar, OR the warning flags, and take the higher confidence."""
+    into.dishes = _union(into.dishes, other.dishes)
+    into.context_tags = _union(into.context_tags, other.context_tags)
+    into.region_hint = into.region_hint or other.region_hint
+    into.address_hint = into.address_hint or other.address_hint
+    into.summary = into.summary or other.summary
+    into.quote = into.quote or other.quote
+    into.source_url = into.source_url or other.source_url
+    into.is_ad = bool(into.is_ad) or bool(other.is_ad)
+    into.is_negative = bool(into.is_negative) or bool(other.is_negative)
+    if other.confidence is not None:
+        into.confidence = max(into.confidence or 0.0, other.confidence)
+
+
+def _dedup_by_name(places: list[ExtractedPlace]) -> list[ExtractedPlace]:
+    """Pre-match dedup on normalized name. Merges obvious repeats (the common
+    profile case) BEFORE matching, so we don't pay Google for the same name twice."""
+    groups: dict[str, ExtractedPlace] = {}
+    order: list[str] = []
+    for place in places:
+        key = normalize_name(place.name) or f"__anon_{len(order)}"
+        if key in groups:
+            _merge_place(groups[key], place)
+        else:
+            groups[key] = place
+            order.append(key)
+    return [groups[key] for key in order]
+
+
+def _match_and_dedup(
+    db: Session, extracted: list[ExtractedPlace]
+) -> list[tuple[ExtractedPlace, place_matching_service.MatchOutcome]]:
+    """Match each place, then collapse any that resolve to the SAME google_place_id
+    into one candidate (different names, one real shop). Returns first-seen order."""
+    groups: dict[str, list] = {}
+    order: list[str] = []
+    for place in extracted:
+        try:
+            outcome = place_matching_service.match(db, place)
+        except Exception as exc:  # noqa: BLE001 — matching must never crash the import
+            logger.warning("place matching failed for %r: %s", place.name, exc, exc_info=True)
+            outcome = place_matching_service.MatchOutcome(status=MatchStatus.pending)
+        key = (
+            f"gid:{outcome.place.google_place_id}"
+            if outcome.place is not None
+            else f"name:{normalize_name(place.name) or place.name}"
+        )
+        if key in groups:
+            _merge_place(groups[key][0], place)
+        else:
+            groups[key] = [place, outcome]
+            order.append(key)
+    return [(groups[key][0], groups[key][1]) for key in order]
+
+
+def _persist_candidate(db: Session, job: ImportJob, platform: str, author: str | None,
+                       place: ExtractedPlace,
+                       outcome: place_matching_service.MatchOutcome) -> ImportCandidate:
+    """Store one already-matched, already-deduped place as a reviewable candidate."""
     return import_repository.add_candidate(
         db,
         import_job_id=job.id,
@@ -135,9 +196,9 @@ def _persist_candidate(db: Session, job: ImportJob, platform: str, author: str |
         is_ad=place.is_ad,
         is_negative=place.is_negative,
         confidence=place.confidence,
-        match_status=match_status,
-        matched_place_id=matched_place_id,
-        match_options=match_options,
+        match_status=outcome.status,
+        matched_place_id=outcome.place.id if outcome.place else None,
+        match_options=outcome.options,
     )
 
 

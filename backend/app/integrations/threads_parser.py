@@ -21,6 +21,7 @@ from collections.abc import Iterable
 import httpx
 from bs4 import BeautifulSoup
 
+from app.core.config import settings
 from app.core.errors import ParseError
 from app.integrations.base import SourceContent, SourceParser
 
@@ -52,18 +53,104 @@ class ThreadsParser(SourceParser):
 
     def fetch(self, url: str) -> list[SourceContent]:
         # post    -> [one SourceContent]
-        # profile -> one SourceContent PER food post
+        # profile -> one SourceContent PER post (capped at settings.profile_max_posts)
         source_type = self.detect_source_type(url)
-        if source_type == "profile":
-            raise ParseError(
-                "Threads profile import is not supported yet; paste a public Threads post URL."
-            )
-
         html, final_url = self._fetch_html(url)
+
+        if source_type == "profile":
+            return self._parse_profile(url=url, final_url=final_url, html=html)
+
         content = self._parse_post(url=url, final_url=final_url, html=html)
         if not content.text.strip() and not content.image_urls:
             raise ParseError("Could not find visible text or images on this Threads post")
         return [content]
+
+    def _parse_profile(self, url: str, final_url: str, html: str) -> list[SourceContent]:
+        """Fan a profile out into one SourceContent per post embedded in the page.
+
+        Only posts server-rendered into the initial HTML are visible (Threads
+        lazy-loads the rest), and we cap at `profile_max_posts` so a big profile
+        can't blow up cost/latency. A post with no readable text or image is
+        skipped rather than failing the whole import.
+        """
+        soup = BeautifulSoup(html, "html.parser")
+        handle = self._author_from_url(self._canonical_url(soup) or final_url or url) \
+            or self._author_from_url(url)
+        suggested = f"@{handle} Threads food finds" if handle else "Threads food finds"
+
+        nodes = self._find_post_nodes(soup)
+        if not nodes:
+            raise ParseError(
+                "No public posts found on this Threads profile (it may be private "
+                "or rendered client-side); paste a single post URL instead."
+            )
+
+        contents: list[SourceContent] = []
+        for node in nodes[: settings.profile_max_posts]:
+            text = self._text_from_node(node)
+            image_urls = self._images_from_node(node)
+            if not text and not image_urls:
+                continue  # skip a post we can't read; don't sink the rest
+            author = self._username_from_node(node) or handle
+            # Profile pages embed reposts / recommended posts from OTHER users too —
+            # only import the profile owner's own posts.
+            if handle and author and author != handle:
+                continue
+            code = node.get("code")
+            post_url = (
+                f"https://www.threads.com/@{author}/post/{code}"
+                if author and isinstance(code, str) and code
+                else url
+            )
+            contents.append(
+                SourceContent(
+                    platform=self.platform,
+                    source_url=post_url,
+                    source_type="post",
+                    author=author,
+                    title=None,
+                    text=text,
+                    image_urls=image_urls,
+                    suggested_collection_name=suggested,
+                    raw={"original_url": url, "final_url": final_url, "post_id": code},
+                )
+            )
+
+        if not contents:
+            raise ParseError(
+                "Found posts on this profile but none had readable text or images."
+            )
+        return contents
+
+    def _find_post_nodes(self, soup: BeautifulSoup) -> list[dict]:
+        """Every embedded post node on the page, in first-seen order, deduped by `code`.
+
+        Same shape `_find_post_node` keys on (a real media node carries `code` +
+        `caption`), but collects ALL of them for a profile fan-out instead of one.
+        """
+        found: dict[str, dict] = {}
+
+        def walk(value: object) -> None:
+            if isinstance(value, dict):
+                code = value.get("code")
+                if isinstance(code, str) and code and "caption" in value and code not in found:
+                    found[code] = value
+                for nested in value.values():
+                    walk(nested)
+            elif isinstance(value, list):
+                for item in value:
+                    walk(item)
+
+        for script in soup.find_all("script", type="application/json"):
+            raw = script.string
+            if not raw or '"code"' not in raw:
+                continue
+            try:
+                data = json.loads(raw)
+            except json.JSONDecodeError:
+                continue
+            walk(data)
+        return list(found.values())
 
     def _fetch_html(self, url: str) -> tuple[str, str]:
         try:

@@ -98,8 +98,95 @@ def test_threads_post_anchors_on_matching_node_not_longer_decoy() -> None:
     assert content.image_urls == ["https://img/real.jpg"]
 
 
-def test_threads_profile_is_clear_unsupported_error() -> None:
+_PROFILE_HTML = """
+<html>
+  <head><link rel="canonical" href="https://www.threads.com/@chef"></head>
+  <body>
+    <script type="application/json">
+      {"data": {"posts": [
+        {"code": "AAA", "user": {"username": "chef"},
+         "caption": {"text": "Ramen at Ichiran was great."},
+         "image_versions2": {"candidates": [{"url": "https://img/a.jpg"}]}},
+        {"code": "BBB", "user": {"username": "chef"},
+         "caption": {"text": "Coffee at Fika, lovely."}},
+        {"code": "REF1"}
+      ]}}
+    </script>
+  </body>
+</html>
+"""
+
+
+def test_threads_profile_fans_out_one_unit_per_post() -> None:
     parser = ThreadsParser()
 
-    with pytest.raises(ParseError, match="profile import is not supported"):
-        parser.fetch("https://www.threads.net/@tester")
+    units = parser._parse_profile(
+        url="https://www.threads.com/@chef",
+        final_url="https://www.threads.com/@chef",
+        html=_PROFILE_HTML,
+    )
+
+    # Two real posts; the bare {"code": "REF1"} reference (no caption) is ignored.
+    assert len(units) == 2
+    assert all(u.source_type == "post" for u in units)
+    assert units[0].source_url == "https://www.threads.com/@chef/post/AAA"
+    assert units[0].text == "Ramen at Ichiran was great."
+    assert units[0].image_urls == ["https://img/a.jpg"]
+    assert units[1].source_url == "https://www.threads.com/@chef/post/BBB"
+    assert all(u.suggested_collection_name == "@chef Threads food finds" for u in units)
+
+
+def test_threads_profile_skips_reposts_from_other_users() -> None:
+    parser = ThreadsParser()
+    html = """
+    <html>
+      <head><link rel="canonical" href="https://www.threads.com/@chef"></head>
+      <body>
+        <script type="application/json">
+          {"data": {"posts": [
+            {"code": "AAA", "user": {"username": "chef"},
+             "caption": {"text": "My own post about dinner."}},
+            {"code": "ZZZ", "user": {"username": "someone_else"},
+             "caption": {"text": "A recommended post from another account."}}
+          ]}}
+        </script>
+      </body>
+    </html>
+    """
+
+    units = parser._parse_profile(
+        url="https://www.threads.com/@chef",
+        final_url="https://www.threads.com/@chef",
+        html=html,
+    )
+
+    assert len(units) == 1
+    assert units[0].author == "chef"
+    assert units[0].source_url == "https://www.threads.com/@chef/post/AAA"
+
+
+def test_threads_profile_respects_max_posts_cap(monkeypatch) -> None:
+    from app.core.config import settings
+
+    monkeypatch.setattr(settings, "profile_max_posts", 1)
+    parser = ThreadsParser()
+
+    units = parser._parse_profile(
+        url="https://www.threads.com/@chef",
+        final_url="https://www.threads.com/@chef",
+        html=_PROFILE_HTML,
+    )
+
+    assert len(units) == 1
+    assert units[0].source_url == "https://www.threads.com/@chef/post/AAA"
+
+
+def test_threads_profile_with_no_posts_is_clear_error() -> None:
+    parser = ThreadsParser()
+
+    with pytest.raises(ParseError, match="No public posts found"):
+        parser._parse_profile(
+            url="https://www.threads.com/@empty",
+            final_url="https://www.threads.com/@empty",
+            html="<html><body>nothing here</body></html>",
+        )

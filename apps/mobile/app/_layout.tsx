@@ -8,6 +8,8 @@ import { useEffect } from "react";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 
+import { ImportBackgroundIndicator } from "@/components/ImportBackgroundIndicator";
+import { ImportFlowModal } from "@/components/ImportFlowModal";
 import { useAuthStore } from "@/stores/authStore";
 
 export default function RootLayout() {
@@ -39,6 +41,14 @@ export default function RootLayout() {
           <Stack.Screen name="(tabs)" />
           <Stack.Screen name="login" />
         </Stack>
+        {/* Global import surfaces: the sheet + the cross-screen progress pill. Only
+            once signed in — they read the import store, which is empty otherwise. */}
+        {token && (
+          <>
+            <ImportFlowModal />
+            <ImportBackgroundIndicator />
+          </>
+        )}
       </SafeAreaProvider>
     </GestureHandlerRootView>
   );
